@@ -1,5 +1,6 @@
 import { Session } from "@/auth/session";
 import { Header } from "@/components/Header";
+import { SubjectCard } from "@/components/SubjectCard";
 import { useLoaderData } from "react-router-dom";
 
 export const ClasesPage = () => {
@@ -29,6 +30,8 @@ export const ClasesPage = () => {
             alumnos inscritos
           </p>
         </div>
+
+        <SubjectCard />
       </div>
     </>
   );
