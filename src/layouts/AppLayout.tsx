@@ -6,6 +6,8 @@ interface NavItem {
   label: string;
 }
 
+
+
 // Los enlaces visibles varían por rol, igual que el sidebar del diseño
 // (Mis Materias/alumno, Mis Clases + Gestión Alumnos/docente, etc.).
 const NAV_BY_ROL: Record<string, NavItem[]> = {
@@ -80,6 +82,8 @@ export default function AppLayout() {
       </aside>
 
       <main className="flex-1 bg-slate-50">
+
+  
         <Outlet />
       </main>
     </div>
