@@ -1,9 +1,20 @@
-// Reflejan 1:1 los modelos Pydantic de app/models/*.py
+// Reflejan 1:1 el OpenAPI de PPE_Guard v0.1.0 (/api/v1/*)
 
 export type Rol = "admin" | "coordinador" | "docente" | "alumno";
 export type Area = "civil" | "medicina";
+export type EstadoPractica = "activa" | "finalizada";
 
-// --- Auth (app/models/usuario.py) ---
+// Los datetime llegan como string ISO 8601
+export type ISODateTime = string;
+
+// --- Health (GET /health) ---
+
+export interface HealthResponse {
+  status: string;
+  mongo: string;
+}
+
+// --- Auth (POST /auth/login) ---
 
 export interface UsuarioLogin {
   codigo: string;
@@ -12,8 +23,8 @@ export interface UsuarioLogin {
 
 export interface TokenResponse {
   access_token: string;
-  token_type: string;
-  rol: Rol;
+  token_type: string; // default "bearer"
+  rol: Rol; // el backend lo tipa como string
   nombre: string;
 }
 
@@ -25,11 +36,13 @@ export interface JwtPayload {
   exp: number;
 }
 
+// --- Usuarios (POST /usuarios/coordinadores | docentes | alumnos) ---
+
 export interface UsuarioOut {
   _id: string;
   codigo: string;
   nombre: string;
-  rol: Rol;
+  rol: Rol; // el backend lo tipa como string
   carrera?: string | null;
   facultad?: string | null;
   coordinador_id?: string | null;
@@ -57,51 +70,116 @@ export interface AlumnoCreate {
   facultad: string;
 }
 
-// --- Aulas (app/models/aula.py) ---
+// --- Materias (POST/GET /materias, POST /materias/{materia_id}/alumnos) ---
 
-export interface AulaCreate {
+export interface MateriaCreate {
   nombre: string;
   area: Area;
+  carrera: string;
+  facultad: string;
+  aula: string;
   docente_id: string;
+  // coordinador_id lo asigna el backend, no se envía
 }
 
-export interface AulaInDB extends AulaCreate {
+export interface MateriaInDB extends MateriaCreate {
   _id: string;
-  estudiantes_ids: string[];
+  coordinador_id: string;
+  alumnos_ids: string[]; // default []
 }
 
-// --- Estudiantes (app/models/estudiante.py) ---
-
-export interface EstudianteOut {
-  _id: string;
+export interface AlumnoEnrollRequest {
   codigo: string;
-  nombre: string;
 }
 
-// --- Practices (app/models/practice.py) ---
+// Query params de GET /materias
+export interface ListarMateriasParams {
+  docente_id?: string | null;
+}
+
+// --- Practices: catálogo (GET /practices) ---
 
 export interface PracticeInDB {
   _id: string;
-  area: Area;
+  area: string;
   nombre: string;
   ppe_requerido: string[];
-  created_at: string;
+  created_at?: ISODateTime;
 }
 
-// --- Asistencias (app/models/asistencia.py) ---
+// --- Prácticas (POST /practicas, GET /practicas/active,
+//     POST /practicas/{id}/confirmar, POST /practicas/{id}/end) ---
+
+export interface PracticaCreate {
+  materia_id: string;
+}
+
+export interface PracticaInDB {
+  _id: string;
+  materia_id: string;
+  docente_id: string;
+  fecha: ISODateTime;
+  hora_inicio: ISODateTime;
+  hora_fin: ISODateTime | null;
+  estado: EstadoPractica; // default "activa"
+}
+
+// GET /practicas/active devuelve null si no hay práctica activa
+export type PracticaActivaResponse = PracticaInDB | null;
+
+export interface ConfirmarRequest {
+  alumno_id: string;
+}
+
+// --- Asistencias (GET /asistencias) ---
 
 export interface AsistenciaInDB {
   _id: string;
-  aula_id: string;
-  estudiante_id: string;
-  fecha: string;
-  hora_identificacion: string;
+  practica_id: string;
+  alumno_id: string;
+  hora_identificacion: ISODateTime;
   cumplio_indumentaria: boolean;
+  faltantes: string[]; // default []
+  evidencia_url?: string | null;
+}
+
+// Query params de GET /asistencias
+export interface ListarAsistenciasParams {
+  materia_id?: string | null;
+  docente_id?: string | null;
+  fecha_desde?: ISODateTime | null;
+  fecha_hasta?: ISODateTime | null;
+}
+
+// --- Reporte (GET /practicas/{practica_id}/reporte) ---
+
+export interface FilaAsistencia {
+  alumno_id: string;
+  nombre: string;
+  codigo: string;
+  hora_identificacion: ISODateTime | null;
+  presente: boolean;
+  cumplio_indumentaria: boolean | null;
   faltantes: string[];
   evidencia_url: string | null;
 }
 
-// --- Violations / eventos en vivo (app/models/violation.py + websockets) ---
+export interface ReportePractica {
+  practica_id: string;
+  materia_nombre: string;
+  docente_nombre: string;
+  fecha: ISODateTime;
+  hora_inicio: ISODateTime;
+  hora_fin: ISODateTime | null;
+  total_matriculados: number;
+  presentes: number;
+  ausentes: number;
+  cumplieron: number;
+  no_cumplieron: number;
+  detalle: FilaAsistencia[];
+}
+
+// --- Violations / eventos en vivo (WebSocket, no documentado en el OpenAPI) ---
 
 export interface ViolationInDB {
   _id: string;
@@ -151,8 +229,22 @@ export type WsEvent =
       timestamp: string;
     };
 
-// --- Errores de la API (detalle de HTTPException de FastAPI) ---
+// --- Errores de la API ---
 
+// HTTPException de FastAPI
 export interface ApiError {
   detail: string;
+}
+
+// 422 Validation Error
+export interface ValidationError {
+  loc: (string | number)[];
+  msg: string;
+  type: string;
+  input?: unknown;
+  ctx?: Record<string, unknown>;
+}
+
+export interface HTTPValidationError {
+  detail?: ValidationError[];
 }

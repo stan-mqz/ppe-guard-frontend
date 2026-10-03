@@ -1,16 +1,5 @@
 import { apiClient } from "@/api/client";
-import type {
-  AlumnoCreate,
-  CoordinadorCreate,
-  DocenteCreate,
-  EstudianteOut,
-  UsuarioOut,
-} from "@/types";
-
-export async function listarEstudiantes(): Promise<EstudianteOut[]> {
-  const { data } = await apiClient.get<EstudianteOut[]>("/estudiantes");
-  return data;
-}
+import type { AlumnoCreate, CoordinadorCreate, DocenteCreate, UsuarioOut } from "@/types";
 
 export async function crearCoordinador(payload: CoordinadorCreate): Promise<UsuarioOut> {
   const { data } = await apiClient.post<UsuarioOut>("/usuarios/coordinadores", payload);

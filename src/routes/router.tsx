@@ -10,8 +10,16 @@ import { LoginPage, loginAction } from "@/pages/LoginPage";
 import { logoutAction } from "@/pages/LogoutAction";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { StubPage } from "@/pages/StubPage";
-import { AulasPage, aulasLoader, aulasAction } from "@/pages/coordinador/AulasPage";
-import { ClasesPage as DocentesClasesPage }  from "@/pages/docente/ClasesPage";
+import {
+  AulasPage,
+  aulasLoader,
+  aulasAction,
+} from "@/pages/coordinador/AulasPage";
+import {
+  ClasesPage as DocentesClasesPage,
+  ClasesErrorBoundary,
+  clasesLoader,
+} from "@/pages/docente/ClasesPage";
 
 // Pantalla de aterrizaje por rol al entrar a "/app" (equivalente a la home de
 // cada portal en el diseño: "Mis Materias", "Panel de Control Docente", etc.).
@@ -75,8 +83,9 @@ export const router = createBrowserRouter([
           // --- Docente ---
           {
             path: "clases",
-            loader: requireAuth("docente"),
-            element: <DocentesClasesPage/>,
+            loader: clasesLoader,
+            element: <DocentesClasesPage />,
+            errorElement: <ClasesErrorBoundary />,
           },
           {
             path: "alumnos",

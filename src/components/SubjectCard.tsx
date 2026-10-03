@@ -1,33 +1,41 @@
-export const SubjectCard = () => {
+import type { MateriaInDB } from "@/types";
+
+interface SubjectCardProps {
+  materia: MateriaInDB;
+  ppe: string[];
+}
+
+export const SubjectCard = ({ materia, ppe }: SubjectCardProps) => {
   return (
     <div className="w-[330px] space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-lg">
       <div className="space-y-1 border-b border-slate-200 pb-3">
-        <h2 className="text-xs font-semibold text-yellow-600">
-          QO101 • Sección A
-        </h2>
-        <h2 className="text-xl font-bold text-slate-800">Química Orgánica I</h2>
+        <h2 className="text-xs font-semibold text-yellow-600">{materia.carrera}</h2>
+        <h2 className="text-xl font-bold text-slate-800">{materia.nombre}</h2>
       </div>
 
-    
       <div className="space-y-2 text-sm text-slate-600">
-        <p>Laboratorio B-2</p>
-        <p>28 Alumnos Inscritos</p>
+        <p>{materia.aula}</p>
+        <p>{materia.alumnos_ids.length} Alumnos Inscritos</p>
       </div>
 
-     
       <div className="space-y-2">
         <p className="text-[11px] font-semibold uppercase text-slate-600">
           EPP reglamentario:
         </p>
-        <div className="flex gap-2">
-          <span className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-900"></span>
-            Bata de Lab
-          </span>
-          <span className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-900"></span>
-            Gafas Prot.
-          </span>
+        <div className="flex flex-wrap gap-2">
+          {ppe.length === 0 ? (
+            <span className="text-xs text-slate-400">Sin EPP definido</span>
+          ) : (
+            ppe.map((item) => (
+              <span
+                key={item}
+                className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-900"></span>
+                {item}
+              </span>
+            ))
+          )}
         </div>
       </div>
 
