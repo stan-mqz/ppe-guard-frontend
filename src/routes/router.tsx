@@ -26,6 +26,7 @@ import {
   subjectManagementAction,
   subjectManagementLoader,
 } from "@/pages/docente/SubjectManagament";
+import { reportsLoader, ReportsPage } from "@/pages/docente/ReportsPage";
 
 // Pantalla de aterrizaje por rol al entrar a "/app" (equivalente a la home de
 // cada portal en el diseño: "Mis Materias", "Panel de Control Docente", etc.).
@@ -126,8 +127,8 @@ export const router = createBrowserRouter([
           // --- Compartido ---
           {
             path: "reportes",
-            loader: requireAuth("coordinador", "docente"),
-            element: <StubPage title="Reportes EPP" />,
+            loader: reportsLoader, 
+            element: <ReportsPage />,
           },
         ],
       },

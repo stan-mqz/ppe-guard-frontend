@@ -19,6 +19,7 @@ const NAV_BY_ROL: Record<string, NavItem[]> = {
   docente: [
     { to: "/app/clases", label: "Mis Clases" },
     { to: "/app/reportes", label: "Reportes EPP" },
+    { to: "/app/perfil", label: "Mi perfil" },
   ],
   coordinador: [
     { to: "/app/aulas", label: "Materias" },
