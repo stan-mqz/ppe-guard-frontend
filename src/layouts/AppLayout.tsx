@@ -6,8 +6,6 @@ interface NavItem {
   label: string;
 }
 
-
-
 // Los enlaces visibles varían por rol, igual que el sidebar del diseño
 // (Mis Materias/alumno, Mis Clases + Gestión Alumnos/docente, etc.).
 const NAV_BY_ROL: Record<string, NavItem[]> = {
@@ -19,7 +17,7 @@ const NAV_BY_ROL: Record<string, NavItem[]> = {
   docente: [
     { to: "/app/clases", label: "Mis Clases" },
     { to: "/app/reportes", label: "Reportes EPP" },
-    { to: "/app/perfil", label: "Mi perfil" },
+    { to: "/app/mi-perfil", label: "Mi Perfil" },
   ],
   coordinador: [
     { to: "/app/aulas", label: "Materias" },
@@ -57,7 +55,9 @@ export default function AppLayout() {
                 to={item.to}
                 className={({ isActive }) =>
                   `rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                    isActive ? "bg-accent text-brand-dark" : "text-white/80 hover:bg-brand-light"
+                    isActive
+                      ? "bg-accent text-brand-dark"
+                      : "text-white/80 hover:bg-brand-light"
                   }`
                 }
               >
@@ -82,8 +82,6 @@ export default function AppLayout() {
       </aside>
 
       <main className="flex-1 bg-slate-50">
-
-  
         <Outlet />
       </main>
     </div>

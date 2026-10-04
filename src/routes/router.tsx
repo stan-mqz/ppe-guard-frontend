@@ -27,6 +27,7 @@ import {
   subjectManagementLoader,
 } from "@/pages/docente/SubjectManagament";
 import { reportsLoader, ReportsPage } from "@/pages/docente/ReportsPage";
+import { perfilDocenteLoader, PerfilDocentePage } from "@/pages/docente/ProfilePage";
 
 // Pantalla de aterrizaje por rol al entrar a "/app" (equivalente a la home de
 // cada portal en el diseño: "Mis Materias", "Panel de Control Docente", etc.).
@@ -104,6 +105,12 @@ export const router = createBrowserRouter([
             errorElement: <SubjectManagementErrorBoundary />,
           },
 
+          {
+            path: "mi-perfil",
+            loader: perfilDocenteLoader,
+            element: <PerfilDocentePage />,
+          },
+
           // --- Coordinador / Admin ---
           {
             // aulasLoader incluye la protección por rol ("coordinador") y la
@@ -127,7 +134,7 @@ export const router = createBrowserRouter([
           // --- Compartido ---
           {
             path: "reportes",
-            loader: reportsLoader, 
+            loader: reportsLoader,
             element: <ReportsPage />,
           },
         ],
