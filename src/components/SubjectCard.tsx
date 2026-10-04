@@ -11,16 +11,16 @@ export const SubjectCard = ({ materia, ppe }: SubjectCardProps) => {
 
   return (
     <div className="w-[330px] space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-lg">
-      <Link
-        to={detalleUrl}
+      <div
         className="block space-y-1 border-b border-slate-200 pb-3"
       >
         <h2 className="text-xs font-semibold text-yellow-600">{materia.carrera}</h2>
         <h2 className="text-xl font-bold text-slate-800">{materia.nombre}</h2>
-      </Link>
+      </div>
 
       <div className="space-y-2 text-sm text-slate-600">
-        <p>{materia.aula}</p>
+        <p>{materia.aula}</p>  return data;
+
         <p>{materia.alumnos_ids.length} Alumnos Inscritos</p>
       </div>
 
