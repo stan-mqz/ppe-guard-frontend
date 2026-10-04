@@ -1,4 +1,5 @@
 import type { MateriaInDB } from "@/types";
+import { Link } from "react-router-dom";
 
 interface SubjectCardProps {
   materia: MateriaInDB;
@@ -6,12 +7,17 @@ interface SubjectCardProps {
 }
 
 export const SubjectCard = ({ materia, ppe }: SubjectCardProps) => {
+  const detalleUrl = `/app/materias/${materia._id}`;
+
   return (
     <div className="w-[330px] space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-lg">
-      <div className="space-y-1 border-b border-slate-200 pb-3">
+      <Link
+        to={detalleUrl}
+        className="block space-y-1 border-b border-slate-200 pb-3"
+      >
         <h2 className="text-xs font-semibold text-yellow-600">{materia.carrera}</h2>
         <h2 className="text-xl font-bold text-slate-800">{materia.nombre}</h2>
-      </div>
+      </Link>
 
       <div className="space-y-2 text-sm text-slate-600">
         <p>{materia.aula}</p>
@@ -44,9 +50,12 @@ export const SubjectCard = ({ materia, ppe }: SubjectCardProps) => {
           Iniciar Práctica IA
         </button>
         <div className="grid grid-cols-2 gap-2">
-          <button className="rounded-lg border border-slate-200 bg-slate-50 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
+          <Link
+            to={detalleUrl}
+            className="rounded-lg border border-slate-200 bg-slate-50 py-2 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+          >
             Alumnos
-          </button>
+          </Link>
           <button className="rounded-lg border border-slate-200 bg-slate-50 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
             Reportes
           </button>

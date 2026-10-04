@@ -20,6 +20,12 @@ import {
   ClasesErrorBoundary,
   clasesLoader,
 } from "@/pages/docente/ClasesPage";
+import {
+  SubjectManagement,
+  SubjectManagementErrorBoundary,
+  subjectManagementAction,
+  subjectManagementLoader,
+} from "@/pages/docente/SubjectManagament";
 
 // Pantalla de aterrizaje por rol al entrar a "/app" (equivalente a la home de
 // cada portal en el diseño: "Mis Materias", "Panel de Control Docente", etc.).
@@ -88,9 +94,13 @@ export const router = createBrowserRouter([
             errorElement: <ClasesErrorBoundary />,
           },
           {
-            path: "alumnos",
-            loader: requireAuth("docente"),
-            element: <StubPage title="Gestión de Alumnos" />,
+            // Gestión de Alumnos Inscritos de una materia.
+            // subjectManagementLoader ya incluye requireAuth("docente").
+            path: "materias/:subjectId",
+            loader: subjectManagementLoader,
+            action: subjectManagementAction,
+            element: <SubjectManagement />,
+            errorElement: <SubjectManagementErrorBoundary />,
           },
 
           // --- Coordinador / Admin ---
