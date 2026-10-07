@@ -20,7 +20,9 @@ import {
 } from "@/api/materias";
 import { listarPracticas } from "@/api/practices";
 import { Header } from "@/components/Header";
-import type { AsistenciaInDB, MateriaInDB, PracticeInDB, UsuarioOut } from "@/types";
+import { parseFechaApi } from "@/utils/format";
+import { listaEpp } from "@/utils/materia";
+import type { AlumnoEnMateriaOut, AsistenciaInDB, MateriaInDB, PracticeInDB } from "@/types";
 
 // ---------------------------------------------------------------------------
 // Datos: loader y action
@@ -30,7 +32,7 @@ interface SubjectManagementData {
   materia: MateriaInDB;
   ppe: string[];
   /** null = el endpoint de alumnos falló (o aún no existe en el backend). */
-  alumnos: UsuarioOut[] | null;
+  alumnos: AlumnoEnMateriaOut[] | null;
   /** Última asistencia registrada por alumno_id. */
   ultimaAsistencia: Record<string, AsistenciaInDB>;
   /** true si GET /health respondió correctamente. */
@@ -119,13 +121,13 @@ const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "O
 
 /** "18 Nov 2026" */
 function formatFecha(iso: string): string {
-  const d = new Date(iso);
+  const d = parseFechaApi(iso);
   return `${String(d.getDate()).padStart(2, "0")} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 /** "08:15 AM" */
 function formatHora(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  return parseFechaApi(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 }
 
 /** Minúsculas y sin tildes, para que "menjivar" encuentre "Menjívar". */
@@ -183,7 +185,7 @@ function AsistenciaCell({ asistencia }: { asistencia?: AsistenciaInDB }) {
     );
   }
 
-  const faltantes = asistencia.faltantes.length > 0 ? asistencia.faltantes.join(", ") : "EPP";
+  const faltantes = asistencia.faltantes.length > 0 ? listaEpp(asistencia.faltantes) : "EPP";
   return (
     <span className="text-red-500">
       {fecha} • Falta {faltantes}
@@ -205,7 +207,7 @@ function AlumnoRow({
   alumno,
   asistencia,
 }: {
-  alumno: UsuarioOut;
+  alumno: AlumnoEnMateriaOut;
   asistencia?: AsistenciaInDB;
 }) {
   // Cada fila tiene su propio fetcher: dar de baja no navega ni bloquea la tabla.
@@ -361,7 +363,7 @@ export const SubjectManagement = () => {
             <h2 className="text-xl font-bold text-slate-800">{materia.nombre}</h2>
             <p className="text-sm text-slate-500">
               {materia.aula} | EPP requerido:{" "}
-              {ppe.length > 0 ? ppe.join(", ") : "Sin EPP definido"}
+              {ppe.length > 0 ? listaEpp(ppe) : "Sin EPP definido"}
             </p>
           </div>
           <div className="text-right">

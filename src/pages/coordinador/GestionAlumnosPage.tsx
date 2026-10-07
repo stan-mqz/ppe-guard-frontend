@@ -13,6 +13,7 @@ import { usePagination } from "@/hooks/usePagination";
 import { useToast } from "@/hooks/useToast";
 import type { UsuarioDetalle } from "@/types/portal";
 import { coincide, formatDiaMes } from "@/utils/format";
+import { etiquetaEpp, listaEpp } from "@/utils/materia";
 
 const UMBRAL_ASISTENCIA = 70;
 
@@ -22,11 +23,11 @@ const UltimaValidacion = ({ alumno }: { alumno: UsuarioDetalle }) => {
   const dia = formatDiaMes(v.fecha);
   return v.cumplio ? (
     <span className="text-slate-500">
-      {dia} • {v.detectado.join(" + ") || "EPP completo"} (Válido)
+      {dia} • {v.detectado.map(etiquetaEpp).join(" + ") || "EPP completo"} (Válido)
     </span>
   ) : (
     <span className="font-medium text-red-500">
-      {dia} • No portaba {v.faltantes.join(", ") || "el EPP reglamentario"}
+      {dia} • No portaba {listaEpp(v.faltantes) || "el EPP reglamentario"}
     </span>
   );
 };

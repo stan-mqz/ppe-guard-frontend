@@ -96,15 +96,34 @@ hablar con PPE_Guard.
 Contraseña de todos: `UNIVO*2026`. Los cambios se guardan en `sessionStorage`
 (sobreviven a una recarga y se reinician al cerrar la pestaña).
 
-## 8. Pendiente en el backend
+## 8. Contrato con el backend
 
-Las pantallas nuevas usan endpoints que PPE_Guard todavía no expone; están
-marcados como `PENDIENTE EN BACKEND` en `src/api/materiasDetalle.ts`,
-`src/api/usuariosGestion.ts` y `src/api/practicas.ts`, y simulados en
-`src/mocks/server.ts` (que sirve como referencia del contrato esperado). Los
-campos extra que devuelven (`codigo`, `seccion` y `epp` de la materia, `numero`
-y `tema` de la práctica, etc.) están en `src/types/portal.ts`.
+La referencia es `FRONTEND.md` del repo PPE_Guard. Lo que el frontend ya sigue:
 
-En la práctica en vivo, con el backend real se muestra el MJPEG
-`GET /api/v1/stream` y las cajas de `useDetectionsSocket`; en modo demostración
-se usa la cámara del navegador.
+- **Fechas:** llegan en UTC sin zona; se leen con `parseFechaApi` (`src/utils/format.ts`).
+- **EPP:** el backend usa las clases del modelo YOLO (`Hardhat`, `Safety Vest`...) y
+  lo define por área; `etiquetaEpp` (`src/utils/materia.ts`) las traduce.
+- **Cámara:** es la del servidor. Iniciar una práctica y enrolar un alumno no
+  piden la cámara del navegador (solo el modo demostración la usa).
+- **Práctica en vivo:** MJPEG de `GET /api/v1/stream` + eventos de
+  `/ws/detections` (`useDetectionsSocket`): alumno identificado → Confirmar
+  (`POST /practicas/{id}/confirmar`) → revisión de 6 s → asistencia registrada.
+- **Materias:** `GET /materias/{id}` y `PATCH /materias/{id}` (solo nombre,
+  carrera, facultad y aula; área y docente no se pueden cambiar).
+
+## 9. Pendiente en el backend
+
+Lo que las pantallas usan y PPE_Guard todavía no expone está marcado como
+`PENDIENTE EN BACKEND` en `src/api/` y simulado en `src/mocks/server.ts`:
+
+- Listar y editar usuarios (docentes, alumnos, coordinadores), desactivarlos,
+  buscar en el padrón, importar CSV, cambiar contraseña y el resumen del panel.
+  Contra el backend real esas pantallas muestran su estado de error; los
+  formularios de materia y docente piden el `_id` a mano.
+- Endpoints para el alumno: no puede consultar materias (403), así que "Mis
+  Materias" falla y su historial se muestra sin materia ni establecimiento.
+- Código, sección y EPP por materia; número y tema de la práctica; eliminar
+  materia; reasignar docente (`src/types/portal.ts`).
+- Listar las prácticas de una materia: se reconstruye agrupando
+  `GET /asistencias` por `practica_id`, así que las prácticas sin asistencias
+  no aparecen.

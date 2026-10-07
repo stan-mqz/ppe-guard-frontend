@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { getApiErrorMessage } from "@/api/client";
+import { USE_MOCKS } from "@/api/config";
 import { guardarMateria, listarFacultades, listarMateriasDetalle } from "@/api/materiasDetalle";
 import { crearDocente } from "@/api/usuarios";
 import { actualizarUsuario, obtenerUsuario } from "@/api/usuariosGestion";
@@ -13,7 +14,7 @@ import { Field, Input, Select } from "@/components/Field";
 import { Topbar } from "@/components/Topbar";
 import { useAsync } from "@/hooks/useAsync";
 import { useSession } from "@/hooks/useSession";
-import type { MateriaVista } from "@/types/portal";
+import type { Facultad, MateriaVista } from "@/types/portal";
 import { coincide } from "@/utils/format";
 
 const LISTA = "/app/docentes";
@@ -28,7 +29,8 @@ export const DocenteFormPage = () => {
   const { data, loading, error, reload } = useAsync(
     async () => {
       const [facultades, materias, docente] = await Promise.all([
-        listarFacultades(),
+        // PENDIENTE EN BACKEND: sin catálogo de facultades el campo es de texto libre.
+        listarFacultades().catch(() => [] as Facultad[]),
         listarMateriasDetalle(),
         id ? obtenerUsuario(id) : null,
       ]);
@@ -42,6 +44,10 @@ export const DocenteFormPage = () => {
   const [codigo, setCodigo] = useState("");
   const [facultad, setFacultad] = useState("");
   const [password, setPassword] = useState("");
+  // El docente queda a cargo de un coordinador. El coordinador manda su propio
+  // id; el admin debe indicar cuál (el backend aún no permite listarlos).
+  const pideCoordinador = !USE_MOCKS && !id && session.payload.rol === "admin";
+  const [coordinadorId, setCoordinadorId] = useState("");
   const [asignadas, setAsignadas] = useState<string[]>([]);
   const [buscador, setBuscador] = useState<string | null>(null); // null = caja cerrada
   const [porRemover, setPorRemover] = useState<MateriaVista | null>(null);
@@ -72,8 +78,13 @@ export const DocenteFormPage = () => {
     e.preventDefault();
     const encontrados: Record<string, string> = {};
     if (nombre.trim().length < 5) encontrados.nombre = "Ingrese el nombre completo del docente.";
-    if (!/^DOC-\d{6}$/i.test(codigo.trim())) encontrados.codigo = "Use el formato DOC-000000.";
-    if (!facultad) encontrados.facultad = "Seleccione la facultad.";
+    if (USE_MOCKS ? !/^DOC-\d{6}$/i.test(codigo.trim()) : !codigo.trim()) {
+      encontrados.codigo = USE_MOCKS ? "Use el formato DOC-000000." : "Ingrese el código del docente.";
+    }
+    if (!facultad.trim()) encontrados.facultad = "Indique la facultad.";
+    if (pideCoordinador && !/^[0-9a-f]{24}$/i.test(coordinadorId.trim())) {
+      encontrados.coordinador = "Ingrese el ID del coordinador (24 caracteres hexadecimales).";
+    }
     if (!id && password.length < 8) encontrados.password = "La contraseña debe tener al menos 8 caracteres.";
     if (id && password && password.length < 8) encontrados.password = "La contraseña debe tener al menos 8 caracteres.";
     setErrores(encontrados);
@@ -82,14 +93,20 @@ export const DocenteFormPage = () => {
     setGuardando(true);
     setErrorGuardar(null);
     try {
-      const datos = { nombre: nombre.trim(), codigo: codigo.trim().toUpperCase(), facultad };
+      const datos = { nombre: nombre.trim(), codigo: codigo.trim().toUpperCase(), facultad: facultad.trim() };
       const docenteId = id
         ? (await actualizarUsuario(id, { ...datos, ...(password ? { password } : {}) }))._id
-        : // coordinador_id es obligatorio en el backend: el docente queda a cargo de quien lo registra.
-          (await crearDocente({ ...datos, password, coordinador_id: session.payload.uid }))._id;
+        : (
+            await crearDocente({
+              ...datos,
+              password,
+              coordinador_id: pideCoordinador ? coordinadorId.trim() : session.payload.uid,
+            })
+          )._id;
 
-      // La asignación vive en cada materia (materia.docente_id).
-      await Promise.all([
+      // La asignación vive en cada materia (materia.docente_id). PENDIENTE EN
+      // BACKEND: PATCH /materias/{id} todavía no acepta docente_id.
+      if (USE_MOCKS) await Promise.all([
         ...asignadas.filter((m) => !originales.includes(m)).map((m) => guardarMateria({ docente_id: docenteId }, m)),
         ...originales.filter((m) => !asignadas.includes(m)).map((m) => guardarMateria({ docente_id: "" }, m)),
       ]);
@@ -129,14 +146,28 @@ export const DocenteFormPage = () => {
                   <Input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Ej. DOC-202101" />
                 </Field>
                 <Field label="Facultad" required error={errores.facultad}>
-                  <Select value={facultad} onChange={(e) => setFacultad(e.target.value)}>
-                    <option value="">Seleccione una facultad</option>
-                    {data!.facultades.map((f) => (
-                      <option key={f.nombre}>{f.nombre}</option>
-                    ))}
-                  </Select>
+                  {data!.facultades.length > 0 ? (
+                    <Select value={facultad} onChange={(e) => setFacultad(e.target.value)}>
+                      <option value="">Seleccione una facultad</option>
+                      {data!.facultades.map((f) => (
+                        <option key={f.nombre}>{f.nombre}</option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input value={facultad} onChange={(e) => setFacultad(e.target.value)} placeholder="Ej. Facultad de Ingeniería y Arquitectura" />
+                  )}
                 </Field>
               </div>
+
+              {pideCoordinador && (
+                <Field label="Coordinador a Cargo (ID)" required error={errores.coordinador}>
+                  <Input
+                    value={coordinadorId}
+                    onChange={(e) => setCoordinadorId(e.target.value)}
+                    placeholder="_id del coordinador (24 caracteres)"
+                  />
+                </Field>
+              )}
 
               <Field label="Contraseña de Acceso Portal" required={!id} error={errores.password}>
                 <Input
@@ -148,6 +179,12 @@ export const DocenteFormPage = () => {
                 />
               </Field>
 
+              {!USE_MOCKS ? (
+                <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+                  Las materias se asignan al docente desde “Nueva Materia”: el servidor aún no permite
+                  reasignar una materia ya creada.
+                </p>
+              ) : (
               <div>
                 <p className="mb-1.5 text-sm font-semibold text-slate-700">Materias Asignadas (Lista Dinámica)</p>
                 <ul className="space-y-2">
@@ -218,6 +255,7 @@ export const DocenteFormPage = () => {
                   )}
                 </div>
               </div>
+              )}
 
               {errorGuardar && <p role="alert" className="text-sm font-medium text-red-600">{errorGuardar}</p>}
 

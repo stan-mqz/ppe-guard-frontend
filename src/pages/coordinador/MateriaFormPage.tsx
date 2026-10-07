@@ -2,7 +2,9 @@ import clsx from "clsx";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { getApiErrorMessage } from "@/api/client";
+import { USE_MOCKS } from "@/api/config";
 import { guardarMateria, listarFacultades, obtenerMateria } from "@/api/materiasDetalle";
+import { listarPracticas } from "@/api/practices";
 import { listarUsuarios } from "@/api/usuariosGestion";
 import { ErrorState } from "@/components/AsyncState";
 import { BackLink } from "@/components/BackLink";
@@ -11,8 +13,9 @@ import { Card, Skeleton } from "@/components/Card";
 import { Field, Input, Select } from "@/components/Field";
 import { Topbar } from "@/components/Topbar";
 import { useAsync } from "@/hooks/useAsync";
-import type { MateriaPayload } from "@/types/portal";
-import { EPP_OPCIONES } from "@/utils/materia";
+import type { PracticeInDB } from "@/types";
+import type { Facultad, MateriaPayload, UsuarioDetalle } from "@/types/portal";
+import { EPP_OPCIONES, etiquetaEpp, listaEpp } from "@/utils/materia";
 
 const LISTA = "/app/gestion-materias";
 
@@ -30,16 +33,19 @@ const VACIA: MateriaPayload = {
 
 type Errores = Partial<Record<keyof MateriaPayload, string>>;
 
+// Código, sección y EPP por materia son PENDIENTE EN BACKEND: solo se exigen
+// en la demo. El backend real toma el EPP del catálogo según el área.
 function validar(m: MateriaPayload): Errores {
   const e: Errores = {};
   if (m.nombre.trim().length < 3) e.nombre = "Ingrese el nombre de la materia.";
-  if (!/^[A-Za-z]{2,4}\d{3}$/.test(m.codigo.trim())) e.codigo = "Use el formato de código institucional, p. ej. QO101.";
-  if (!m.seccion.trim()) e.seccion = "Indique la sección.";
-  if (!m.facultad) e.facultad = "Seleccione la facultad.";
-  if (!m.carrera) e.carrera = "Seleccione la carrera.";
-  if (!m.docente_id) e.docente_id = "Seleccione el docente asignado.";
+  if (USE_MOCKS && !/^[A-Za-z]{2,4}\d{3}$/.test(m.codigo.trim())) e.codigo = "Use el formato de código institucional, p. ej. QO101.";
+  if (USE_MOCKS && !m.seccion.trim()) e.seccion = "Indique la sección.";
+  if (!m.facultad.trim()) e.facultad = "Indique la facultad.";
+  if (!m.carrera.trim()) e.carrera = "Indique la carrera.";
+  if (!m.docente_id.trim()) e.docente_id = "Indique el docente asignado.";
+  else if (!USE_MOCKS && !/^[0-9a-f]{24}$/i.test(m.docente_id.trim())) e.docente_id = "El ID del docente tiene 24 caracteres hexadecimales.";
   if (!m.aula.trim()) e.aula = "Indique el laboratorio, clínica o taller.";
-  if (m.epp.length === 0) e.epp = "Seleccione al menos un EPP requerido.";
+  if (USE_MOCKS && m.epp.length === 0) e.epp = "Seleccione al menos un EPP requerido.";
   return e;
 }
 
@@ -49,12 +55,20 @@ export const MateriaFormPage = () => {
   const navigate = useNavigate();
   const { data, loading, error, reload } = useAsync(
     async () => {
-      const [facultades, docentes, materia] = await Promise.all([
-        listarFacultades(),
-        listarUsuarios("docente"),
+      // PENDIENTE EN BACKEND: catálogo de facultades y listado de docentes. Si
+      // fallan, esos campos pasan a ser de texto libre (el docente, por su ID).
+      const [facultades, docentes, catalogo, materia] = await Promise.all([
+        listarFacultades().catch(() => [] as Facultad[]),
+        listarUsuarios("docente").catch(() => [] as UsuarioDetalle[]),
+        listarPracticas().catch(() => [] as PracticeInDB[]),
         id ? obtenerMateria(id) : null,
       ]);
-      return { facultades, docentes: docentes.filter((d) => d.activo !== false || d._id === materia?.docente_id), materia };
+      return {
+        facultades,
+        docentes: docentes.filter((d) => d.activo !== false || d._id === materia?.docente_id),
+        catalogo,
+        materia,
+      };
     },
     [id],
     "No se pudo cargar el formulario",
@@ -85,7 +99,16 @@ export const MateriaFormPage = () => {
     setForm((f) => ({ ...f, [campo]: valor }));
   // Incluye prendas que la materia ya tenga y no estén en el catálogo local.
   const opcionesEpp = [...new Set([...EPP_OPCIONES, ...(materia?.epp ?? [])])];
-  const carreras = data?.facultades.find((f) => f.nombre === form.facultad)?.carreras ?? [];
+  // El backend real no permite reasignar el docente de una materia (PATCH lo ignora).
+  const noReasignable = Boolean(id) && !USE_MOCKS;
+  // Al editar, la facultad guardada puede no estar en el catálogo.
+  const opcionesFacultad = [...new Set([...(data?.facultades.map((f) => f.nombre) ?? []), ...(materia ? [materia.facultad] : [])])];
+  const carreras = [
+    ...new Set([
+      ...(data?.facultades.find((f) => f.nombre === form.facultad)?.carreras ?? []),
+      ...(materia?.facultad === form.facultad ? [materia.carrera] : []),
+    ]),
+  ];
 
   const guardar = async (e: FormEvent) => {
     e.preventDefault();
@@ -102,9 +125,10 @@ export const MateriaFormPage = () => {
           nombre: form.nombre.trim(),
           codigo: form.codigo.trim().toUpperCase(),
           seccion: form.seccion.trim().toUpperCase(),
+          facultad: form.facultad.trim(),
+          carrera: form.carrera.trim(),
+          docente_id: form.docente_id.trim(),
           aula: form.aula.trim(),
-          // El backend agrupa el EPP por área; se deduce de la facultad.
-          area: /salud|medicina/i.test(form.facultad) ? "medicina" : "civil",
         },
         id,
       );
@@ -142,48 +166,94 @@ export const MateriaFormPage = () => {
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Código" required error={errores.codigo}>
+                <Field label="Código" required={USE_MOCKS} error={errores.codigo}>
                   <Input value={form.codigo} onChange={(e) => set("codigo", e.target.value)} placeholder="Ej. QO101" />
                 </Field>
-                <Field label="Sección" required error={errores.seccion}>
+                <Field label="Sección" required={USE_MOCKS} error={errores.seccion}>
                   <Input value={form.seccion} onChange={(e) => set("seccion", e.target.value)} placeholder="Ej. A" maxLength={3} />
                 </Field>
 
                 <Field label="Facultad" required error={errores.facultad}>
-                  <Select
-                    value={form.facultad}
-                    onChange={(e) => setForm((f) => ({ ...f, facultad: e.target.value, carrera: "" }))}
-                  >
-                    <option value="">Seleccione una facultad</option>
-                    {data!.facultades.map((f) => (
-                      <option key={f.nombre}>{f.nombre}</option>
-                    ))}
-                  </Select>
+                  {data!.facultades.length > 0 ? (
+                    <Select
+                      value={form.facultad}
+                      onChange={(e) => setForm((f) => ({ ...f, facultad: e.target.value, carrera: "" }))}
+                    >
+                      <option value="">Seleccione una facultad</option>
+                      {opcionesFacultad.map((f) => (
+                        <option key={f}>{f}</option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input value={form.facultad} onChange={(e) => set("facultad", e.target.value)} placeholder="Ej. Facultad de Ingeniería y Arquitectura" />
+                  )}
                 </Field>
                 <Field label="Carrera" required error={errores.carrera}>
-                  <Select value={form.carrera} onChange={(e) => set("carrera", e.target.value)} disabled={!form.facultad}>
-                    <option value="">{form.facultad ? "Seleccione una carrera" : "Primero seleccione la facultad"}</option>
-                    {carreras.map((c) => (
-                      <option key={c}>{c}</option>
-                    ))}
-                  </Select>
+                  {data!.facultades.length > 0 ? (
+                    <Select value={form.carrera} onChange={(e) => set("carrera", e.target.value)} disabled={!form.facultad}>
+                      <option value="">{form.facultad ? "Seleccione una carrera" : "Primero seleccione la facultad"}</option>
+                      {carreras.map((c) => (
+                        <option key={c}>{c}</option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input value={form.carrera} onChange={(e) => set("carrera", e.target.value)} placeholder="Ej. Ingeniería Civil" />
+                  )}
                 </Field>
 
-                <Field label="Docente Asignado" required error={errores.docente_id}>
-                  <Select value={form.docente_id} onChange={(e) => set("docente_id", e.target.value)}>
-                    <option value="">Seleccione un docente</option>
-                    {data!.docentes.map((d) => (
-                      <option key={d._id} value={d._id}>
-                        {d.nombre} ({d.codigo})
-                      </option>
-                    ))}
-                  </Select>
+                <Field
+                  label={data!.docentes.length > 0 ? "Docente Asignado" : "Docente Asignado (ID)"}
+                  required
+                  error={errores.docente_id}
+                >
+                  {data!.docentes.length > 0 ? (
+                    <Select value={form.docente_id} onChange={(e) => set("docente_id", e.target.value)} disabled={noReasignable}>
+                      <option value="">Seleccione un docente</option>
+                      {data!.docentes.map((d) => (
+                        <option key={d._id} value={d._id}>
+                          {d.nombre} ({d.codigo})
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input
+                      value={form.docente_id}
+                      onChange={(e) => set("docente_id", e.target.value)}
+                      disabled={noReasignable}
+                      placeholder="_id del docente (24 caracteres)"
+                    />
+                  )}
                 </Field>
                 <Field label="Ubicación / Laboratorio" required error={errores.aula}>
                   <Input value={form.aula} onChange={(e) => set("aula", e.target.value)} placeholder="Ej. Laboratorio B-2" />
                 </Field>
               </div>
 
+              <Field label="Área de Práctica" required>
+                <Select
+                  value={form.area}
+                  onChange={(e) => set("area", e.target.value as MateriaPayload["area"])}
+                  disabled={Boolean(id)}
+                >
+                  <option value="civil">Civil (ingeniería, talleres)</option>
+                  <option value="medicina">Medicina (salud, laboratorios clínicos)</option>
+                </Select>
+              </Field>
+              {id && (
+                <p className="text-xs text-slate-500">
+                  El área{noReasignable ? " y el docente asignado" : ""} no se pueden cambiar después de crear la
+                  materia.
+                </p>
+              )}
+
+              {!USE_MOCKS ? (
+                <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+                  <span className="font-semibold text-slate-700">EPP requerido: </span>
+                  {listaEpp(data!.catalogo.find((c) => c.area === form.area)?.ppe_requerido ?? []) ||
+                    "sin EPP configurado para esta área"}
+                  . Lo define el área de práctica.
+                </div>
+              ) : (
               <fieldset>
                 <legend className="mb-1.5 text-sm font-semibold text-slate-700">
                   EPP Requerido <span className="text-red-500">*</span>
@@ -208,13 +278,14 @@ export const MateriaFormPage = () => {
                             set("epp", opcionesEpp.filter((p) => (p === prenda ? !activo : form.epp.includes(p))))
                           }
                         />
-                        {prenda}
+                        {etiquetaEpp(prenda)}
                       </label>
                     );
                   })}
                 </div>
                 {errores.epp && <p className="mt-1 text-xs font-medium text-red-600">{errores.epp}</p>}
               </fieldset>
+              )}
 
               {errorGuardar && <p role="alert" className="text-sm font-medium text-red-600">{errorGuardar}</p>}
 

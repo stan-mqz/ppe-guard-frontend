@@ -1,6 +1,7 @@
 import { Shirt } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { listarAsistencias } from "@/api/asistencias";
+import { urlEvidencia } from "@/api/config";
 import { listarMateriasDetalle } from "@/api/materiasDetalle";
 import { BackLink } from "@/components/BackLink";
 import { Card, Eyebrow, Skeleton } from "@/components/Card";
@@ -9,8 +10,8 @@ import { Topbar } from "@/components/Topbar";
 import { useAsync } from "@/hooks/useAsync";
 import { useSession } from "@/hooks/useSession";
 import type { AsistenciaDetalle, MateriaVista } from "@/types/portal";
-import { formatFecha, formatHora } from "@/utils/format";
-import { eppDetectado } from "@/utils/materia";
+import { formatFecha, formatHora, msFechaApi } from "@/utils/format";
+import { eppDetectado, listaEpp } from "@/utils/materia";
 
 interface FilaHistorial {
   asistencia: AsistenciaDetalle;
@@ -20,14 +21,16 @@ interface FilaHistorial {
 /** Accesos del alumno (más recientes primero) junto con la materia de cada uno. */
 async function cargarHistorial(alumnoId: string) {
   const [materias, asistencias] = await Promise.all([
-    listarMateriasDetalle({ alumno_id: alumnoId }),
+    // PENDIENTE EN BACKEND: el alumno aún no puede consultar materias (403). Sin
+    // ellas el historial igual se muestra, solo que sin materia ni establecimiento.
+    listarMateriasDetalle({ alumno_id: alumnoId }).catch(() => [] as MateriaVista[]),
     // Para el rol alumno el backend devuelve solo sus propias asistencias.
     listarAsistencias() as Promise<AsistenciaDetalle[]>,
   ]);
   const porId = new Map(materias.map((m) => [m._id, m]));
   const filas: FilaHistorial[] = asistencias
     .map((asistencia) => ({ asistencia, materia: porId.get(asistencia.materia_id ?? "") }))
-    .sort((a, b) => Date.parse(b.asistencia.hora_identificacion) - Date.parse(a.asistencia.hora_identificacion));
+    .sort((a, b) => msFechaApi(b.asistencia.hora_identificacion) - msFechaApi(a.asistencia.hora_identificacion));
   return { materias, filas };
 }
 
@@ -38,8 +41,18 @@ const Estatus = ({ asistencia, materia }: FilaHistorial) => {
     <span className={`flex items-center gap-2 ${falta ? "font-semibold text-red-500" : "text-slate-700"}`}>
       <Shirt className="h-4 w-4 shrink-0" aria-hidden="true" />
       {falta
-        ? `Falta ${asistencia.faltantes.join(", ") || "EPP reglamentario"}`
-        : detectado.join(", ") || "Indumentaria completa"}
+        ? `Falta ${listaEpp(asistencia.faltantes) || "EPP reglamentario"}`
+        : listaEpp(detectado) || "Indumentaria completa"}
+      {asistencia.evidencia_url && (
+        <a
+          href={urlEvidencia(asistencia.evidencia_url)}
+          target="_blank"
+          rel="noreferrer"
+          className="font-semibold text-brand hover:underline"
+        >
+          Ver evidencia
+        </a>
+      )}
     </span>
   );
 };

@@ -8,6 +8,7 @@
 import { AxiosError, type AxiosAdapter, type AxiosResponse } from "axios";
 import { jwtDecode } from "jwt-decode";
 import type { FilaAsistencia, JwtPayload, Rol } from "@/types";
+import { msFechaApi } from "@/utils/format";
 import type {
   AsistenciaDetalle,
   MateriaDetalle,
@@ -20,6 +21,7 @@ import {
   FACULTADES,
   PASSWORD_DEMO,
   crearDb,
+  fechaApi,
   temasDeMateria,
   type DbUsuario,
   type MockDb,
@@ -29,7 +31,7 @@ import {
 
 // Se guarda en sessionStorage para que una recarga no pierda lo creado
 // (p. ej. una práctica en vivo); al cerrar la pestaña vuelve a los datos semilla.
-const STORAGE_KEY = "ppe_guard_mock_db_v1";
+const STORAGE_KEY = "ppe_guard_mock_db_v2";
 
 function cargarDb(): MockDb {
   try {
@@ -104,9 +106,9 @@ function crearToken(usuario: DbUsuario): string {
 
 /** Igual que require_role en el backend: admin hereda coordinador y docente. */
 function autorizar(ctx: Ctx, ...roles: Rol[]): DbUsuario {
-  if (!ctx.user) throw new HttpError(401, "No autenticado");
+  if (!ctx.user) throw new HttpError(401, "Token inválido o expirado");
   if (roles.length > 0 && ctx.user.rol !== "admin" && !roles.includes(ctx.user.rol)) {
-    throw new HttpError(403, "No tienes permiso para realizar esta acción");
+    throw new HttpError(403, "No tienes permiso para esta acción");
   }
   return ctx.user;
 }
@@ -206,7 +208,7 @@ function exigirCodigoLibre(codigo: string, exceptoId?: string) {
 function asistenciasSimuladas(practica: PracticaDetalle): AsistenciaDetalle[] {
   const materia = buscarMateria(practica.materia_id);
   const epp = eppDe(materia);
-  const inicio = Date.parse(practica.hora_inicio);
+  const inicio = msFechaApi(practica.hora_inicio);
   const transcurrido = (Date.now() - inicio) / 1000;
   const total = materia.alumnos_ids.length;
 
@@ -220,7 +222,7 @@ function asistenciasSimuladas(practica: PracticaDetalle): AsistenciaDetalle[] {
         practica_id: practica._id,
         materia_id: materia._id,
         alumno_id: alumnoId,
-        hora_identificacion: new Date(inicio + llegada * 1000).toISOString(),
+        hora_identificacion: fechaApi(new Date(inicio + llegada * 1000)),
         cumplio_indumentaria: faltantes.length === 0,
         faltantes,
       },
@@ -381,7 +383,6 @@ on("POST", "/materias", (ctx) => {
   return materiaOut(materia);
 });
 
-// PENDIENTE
 on("GET", "/materias/:id", (ctx) => {
   const usuario = autorizar(ctx);
   const materia = buscarMateria(ctx.params.id);
@@ -391,11 +392,15 @@ on("GET", "/materias/:id", (ctx) => {
   return materiaOut(materia);
 });
 
-// PENDIENTE
-on("PUT", "/materias/:id", (ctx) => {
+// El backend real solo aplica nombre, carrera, facultad y aula; el resto de
+// campos que acepta aquí (codigo, seccion, epp, docente_id) es PENDIENTE.
+on("PATCH", "/materias/:id", (ctx) => {
   autorizar(ctx, "coordinador");
   const materia = buscarMateria(ctx.params.id);
-  Object.assign(materia, datosMateria(ctx.body, materia));
+  if (Object.keys(ctx.body).length === 0) {
+    throw new HttpError(400, "No se envió ningún campo para actualizar");
+  }
+  Object.assign(materia, datosMateria(ctx.body, materia), { area: materia.area });
   return materiaOut(materia);
 });
 
@@ -431,9 +436,9 @@ on("POST", "/materias/:id/alumnos", (ctx) => {
   const materia = buscarMateria(ctx.params.id);
   const codigo = texto(ctx.body.codigo).toLowerCase();
   const alumno = db.usuarios.find((u) => u.rol === "alumno" && u.codigo.toLowerCase() === codigo);
-  if (!alumno) throw new HttpError(404, "No existe un alumno con ese código en el padrón");
+  if (!alumno) throw new HttpError(404, "No existe un alumno con ese código");
   if (materia.alumnos_ids.includes(alumno._id)) {
-    throw new HttpError(409, "El alumno ya está inscrito en esta materia");
+    throw new HttpError(409, "El alumno ya está matriculado en esta materia");
   }
   materia.alumnos_ids.push(alumno._id);
   return materiaOut(materia);
@@ -442,6 +447,9 @@ on("POST", "/materias/:id/alumnos", (ctx) => {
 on("DELETE", "/materias/:id/alumnos/:alumnoId", (ctx) => {
   autorizar(ctx, "docente", "coordinador");
   const materia = buscarMateria(ctx.params.id);
+  if (!materia.alumnos_ids.includes(ctx.params.alumnoId)) {
+    throw new HttpError(404, "Ese alumno no está matriculado en esta materia");
+  }
   materia.alumnos_ids = materia.alumnos_ids.filter((id) => id !== ctx.params.alumnoId);
   return materiaOut(materia);
 });
@@ -561,9 +569,8 @@ on("POST", "/usuarios/alumnos", (ctx) => {
   return { ...usuarioOut(usuario), vector_id: `VF-${codigo}-${sufijo}`, precision: 99.98 };
 });
 
-// PENDIENTE
 on("GET", "/usuarios/:id", (ctx) => {
-  autorizar(ctx, "coordinador");
+  autorizar(ctx, "coordinador", "docente");
   return usuarioOut(buscarUsuario(ctx.params.id));
 });
 
@@ -603,7 +610,7 @@ on("POST", "/practicas", (ctx) => {
   if (usuario.rol === "docente" && materia.docente_id !== usuario._id) {
     throw new HttpError(403, "No puedes iniciar una práctica de una materia que no impartes");
   }
-  const ahora = new Date().toISOString();
+  const ahora = fechaApi();
   const practica: PracticaDetalle = {
     _id: nuevoId("pra"),
     materia_id: materia._id,
@@ -634,7 +641,7 @@ on("GET", "/practicas", (ctx) => {
   );
   return db.practicas
     .filter((p) => propias.has(p.materia_id) && (!materia_id || p.materia_id === materia_id))
-    .sort((a, b) => Date.parse(b.hora_inicio) - Date.parse(a.hora_inicio))
+    .sort((a, b) => msFechaApi(b.hora_inicio) - msFechaApi(a.hora_inicio))
     .map(practicaOut);
 });
 
@@ -643,13 +650,20 @@ on("GET", "/practicas/:id/reporte", (ctx) => {
   return reporte(buscarPractica(ctx.params.id));
 });
 
+// En la demo los alumnos se registran solos (ver asistenciasSimuladas), así
+// que no hay a quién confirmar.
+on("POST", "/practicas/:id/confirmar", (ctx) => {
+  autorizar(ctx, "docente");
+  throw new HttpError(409, "Ese alumno no es el último identificado, o la práctica ya está en modo indumentaria");
+});
+
 on("POST", "/practicas/:id/end", (ctx) => {
   autorizar(ctx, "docente");
   const practica = buscarPractica(ctx.params.id);
   if (practica.estado === "finalizada") throw new HttpError(409, "Esta práctica ya fue finalizada");
   db.asistencias.push(...asistenciasSimuladas(practica));
   practica.estado = "finalizada";
-  practica.hora_fin = new Date().toISOString();
+  practica.hora_fin = fechaApi();
   return practica;
 });
 
@@ -674,7 +688,7 @@ on("GET", "/asistencias", (ctx) => {
     );
     lista = db.asistencias.filter((a) => a.materia_id && materias.has(a.materia_id));
   }
-  return [...lista].sort((a, b) => Date.parse(b.hora_identificacion) - Date.parse(a.hora_identificacion));
+  return [...lista].sort((a, b) => msFechaApi(b.hora_identificacion) - msFechaApi(a.hora_identificacion));
 });
 
 // --- Adapter --------------------------------------------------------------------

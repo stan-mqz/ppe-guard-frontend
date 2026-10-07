@@ -1,7 +1,9 @@
 import clsx from "clsx";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import axios from "axios";
 import { getApiErrorMessage } from "@/api/client";
+import { USE_MOCKS } from "@/api/config";
 import { listarFacultades } from "@/api/materiasDetalle";
 import { crearCoordinador } from "@/api/usuarios";
 import { actualizarUsuario, obtenerUsuario } from "@/api/usuariosGestion";
@@ -12,6 +14,7 @@ import { Card, Skeleton } from "@/components/Card";
 import { Field, Input, Select } from "@/components/Field";
 import { Topbar } from "@/components/Topbar";
 import { useAsync } from "@/hooks/useAsync";
+import type { Facultad } from "@/types/portal";
 
 const LISTA = "/app/coordinadores";
 const PERMISOS = ["Crear Materias", "Modificar EPP Obligatorio", "Enrolar Alumnos"];
@@ -24,7 +27,11 @@ export const CoordinadorFormPage = () => {
   const navigate = useNavigate();
   const { data, loading, error, reload } = useAsync(
     async () => {
-      const [facultades, coordinador] = await Promise.all([listarFacultades(), id ? obtenerUsuario(id) : null]);
+      const [facultades, coordinador] = await Promise.all([
+        // PENDIENTE EN BACKEND: sin catálogo de facultades el campo es de texto libre.
+        listarFacultades().catch(() => [] as Facultad[]),
+        id ? obtenerUsuario(id) : null,
+      ]);
       return { facultades, coordinador };
     },
     [id],
@@ -55,8 +62,10 @@ export const CoordinadorFormPage = () => {
     const encontrados: Record<string, string> = {};
     if (nombre.trim().length < 5) encontrados.nombre = "Ingrese el nombre completo.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo.trim())) encontrados.correo = "Ingrese un correo institucional válido.";
-    if (!/^EMP-\d{5}$/i.test(codigo.trim())) encontrados.codigo = "Use el formato EMP-00000.";
-    if (!facultad) encontrados.facultad = "Seleccione la facultad asignada.";
+    if (USE_MOCKS ? !/^EMP-\d{5}$/i.test(codigo.trim()) : !codigo.trim()) {
+      encontrados.codigo = USE_MOCKS ? "Use el formato EMP-00000." : "Ingrese el código de empleado.";
+    }
+    if (!facultad.trim()) encontrados.facultad = "Indique la facultad asignada.";
     setErrores(encontrados);
     if (Object.keys(encontrados).length > 0) return;
 
@@ -67,12 +76,22 @@ export const CoordinadorFormPage = () => {
       // POST /usuarios/coordinadores solo recibe código, nombre y contraseña;
       // el resto de la ficha se completa con el PUT.
       const coordinadorId = id ?? (await crearCoordinador({ ...datos, password: PASSWORD_TEMPORAL }))._id;
-      await actualizarUsuario(coordinadorId, { ...datos, correo: correo.trim(), facultad, permisos });
+      let fichaCompleta = true;
+      try {
+        await actualizarUsuario(coordinadorId, { ...datos, correo: correo.trim(), facultad: facultad.trim(), permisos });
+      } catch (err) {
+        // PENDIENTE EN BACKEND: PUT /usuarios/{id}. Al crear, el coordinador ya
+        // quedó registrado; solo no se guardan correo, facultad ni permisos.
+        const sinEndpoint = axios.isAxiosError(err) && [404, 405].includes(err.response?.status ?? 0);
+        if (id || !sinEndpoint) throw err;
+        fichaCompleta = false;
+      }
       navigate(LISTA, {
         state: {
           toast: id
             ? "Coordinador actualizado."
-            : `Coordinador registrado. Contraseña temporal: ${PASSWORD_TEMPORAL}`,
+            : `Coordinador registrado. Contraseña temporal: ${PASSWORD_TEMPORAL}` +
+              (fichaCompleta ? "" : " (el servidor aún no guarda correo, facultad ni permisos)."),
         },
       });
     } catch (err) {
@@ -112,12 +131,16 @@ export const CoordinadorFormPage = () => {
                   <Input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Ej. EMP-09214" />
                 </Field>
                 <Field label="Facultad Asignada" required error={errores.facultad}>
-                  <Select value={facultad} onChange={(e) => setFacultad(e.target.value)}>
-                    <option value="">Seleccione una facultad</option>
-                    {data!.facultades.map((f) => (
-                      <option key={f.nombre}>{f.nombre}</option>
-                    ))}
-                  </Select>
+                  {data!.facultades.length > 0 ? (
+                    <Select value={facultad} onChange={(e) => setFacultad(e.target.value)}>
+                      <option value="">Seleccione una facultad</option>
+                      {data!.facultades.map((f) => (
+                        <option key={f.nombre}>{f.nombre}</option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input value={facultad} onChange={(e) => setFacultad(e.target.value)} placeholder="Ej. Facultad de Ciencias de la Salud" />
+                  )}
                 </Field>
               </div>
 

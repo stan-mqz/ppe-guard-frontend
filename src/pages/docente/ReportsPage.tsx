@@ -12,6 +12,7 @@ import { listarMaterias, listarMateriasDocente } from "@/api/materias";
 import { listarAsistencias, obtenerReportePractica } from "@/api/asistencias";
 import { Header } from "@/components/Header";
 import type { ISODateTime, MateriaInDB } from "@/types";
+import { parseFechaApi } from "@/utils/format";
 
 interface FilaHistorial {
   practicaId: string;
@@ -80,7 +81,7 @@ export const reportsLoader = async (args: LoaderFunctionArgs) => {
 
   filas.sort(
     (a, b) =>
-      new Date(b.horaInicio).getTime() - new Date(a.horaInicio).getTime(),
+      parseFechaApi(b.horaInicio).getTime() - parseFechaApi(a.horaInicio).getTime(),
   );
 
   return { materias, filas } satisfies ReportsLoaderData;
@@ -118,7 +119,7 @@ const MESES = [
 
 /** "2026-11-18T08:00:00" -> "18 Nov 2026 • 08:00" */
 function formatearFechaHora(iso: ISODateTime): string {
-  const d = new Date(iso);
+  const d = parseFechaApi(iso);
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   return `${String(d.getDate()).padStart(2, "0")} ${MESES[d.getMonth()]} ${d.getFullYear()} • ${hh}:${mm}`;

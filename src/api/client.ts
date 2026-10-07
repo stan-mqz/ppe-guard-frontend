@@ -33,7 +33,10 @@ apiClient.interceptors.response.use(
 /** Extrae un mensaje legible del `detail` que devuelve FastAPI. */
 export function getApiErrorMessage(error: unknown, fallback = "Ocurrió un error inesperado"): string {
   if (axios.isAxiosError<ApiError>(error)) {
-    return error.response?.data?.detail ?? fallback;
+    const detail = error.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+    // En los 422 automáticos de FastAPI, detail es un arreglo de errores de validación.
+    if (Array.isArray(detail)) return detail.map((d) => d.msg).join(", ") || fallback;
   }
   return fallback;
 }

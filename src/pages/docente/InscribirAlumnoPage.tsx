@@ -1,3 +1,4 @@
+import axios from "axios";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { getApiErrorMessage } from "@/api/client";
@@ -18,6 +19,8 @@ type Busqueda =
   | { estado: "inicial" }
   | { estado: "buscando" }
   | { estado: "sin-resultado"; mensaje: string }
+  // El servidor no tiene buscador de alumnos: se inscribe directo por código.
+  | { estado: "sin-padron"; codigo: string }
   | { estado: "encontrado"; alumno: UsuarioDetalle };
 
 export const InscribirAlumnoPage = () => {
@@ -40,6 +43,10 @@ export const InscribirAlumnoPage = () => {
     try {
       setBusqueda({ estado: "encontrado", alumno: await buscarEnPadron(valor) });
     } catch (error) {
+      // PENDIENTE EN BACKEND: GET /usuarios/padron/{codigo}. Hoy esa ruta cae en
+      // GET /usuarios/{usuario_id} y responde 422 ("usuario_id inválido").
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      if (status === 422 || status === 405) return setBusqueda({ estado: "sin-padron", codigo: valor });
       setBusqueda({
         estado: "sin-resultado",
         mensaje: getApiErrorMessage(error, "No se pudo consultar el padrón. Intente de nuevo."),
@@ -47,11 +54,11 @@ export const InscribirAlumnoPage = () => {
     }
   };
 
-  const inscribir = async (alumno: UsuarioDetalle) => {
+  const inscribir = async (codigoAlumno: string) => {
     setInscribiendo(true);
     setErrorInscripcion(null);
     try {
-      await matricularAlumno(subjectId!, { codigo: alumno.codigo });
+      await matricularAlumno(subjectId!, { codigo: codigoAlumno });
       navigate(listaUrl);
     } catch (error) {
       setErrorInscripcion(getApiErrorMessage(error, "No se pudo inscribir al alumno."));
@@ -125,10 +132,23 @@ export const InscribirAlumnoPage = () => {
                   {yaInscrito ? (
                     <span className="text-sm font-semibold text-slate-500">Ya inscrito en esta materia</span>
                   ) : (
-                    <Button onClick={() => inscribir(alumno)} disabled={inscribiendo || !materia.data}>
+                    <Button onClick={() => inscribir(alumno.codigo)} disabled={inscribiendo || !materia.data}>
                       {inscribiendo ? "Inscribiendo..." : "Inscribir en Materia"}
                     </Button>
                   )}
+                </div>
+              )}
+
+              {busqueda.estado === "sin-padron" && (
+                <div className="flex flex-wrap items-center gap-4 rounded-xl border-2 border-accent bg-white p-4">
+                  <p className="min-w-0 flex-1 text-sm text-slate-600">
+                    El servidor aún no permite consultar el padrón antes de inscribir. Puede inscribir
+                    directamente el código <strong className="text-slate-800">{busqueda.codigo}</strong>; si no
+                    existe o ya está matriculado, se le avisará.
+                  </p>
+                  <Button onClick={() => inscribir(busqueda.codigo)} disabled={inscribiendo}>
+                    {inscribiendo ? "Inscribiendo..." : "Inscribir en Materia"}
+                  </Button>
                 </div>
               )}
 

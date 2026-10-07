@@ -1,10 +1,12 @@
+import axios from "axios";
 import { apiClient } from "@/api/client";
 import type {
+  AlumnoEnMateriaOut,
   AlumnoEnrollRequest,
   ListarMateriasParams,
   MateriaCreate,
   MateriaInDB,
-  UsuarioOut,
+  MateriaUpdate,
 } from "@/types";
 
 export async function listarMaterias(params?: ListarMateriasParams): Promise<MateriaInDB[]> {
@@ -16,19 +18,18 @@ export function listarMateriasDocente(docenteId: string): Promise<MateriaInDB[]>
   return listarMaterias({ docente_id: docenteId });
 }
 
-/**
- * El backend aún no expone GET /materias/{id}; se filtra la lista del docente.
- * Esto además evita que un docente vea materias ajenas pegando otro ID en la URL.
- * Cuando exista el endpoint, reemplazar el cuerpo por:
- *   const { data } = await apiClient.get<MateriaInDB>(`/materias/${materiaId}`);
- *   return data;
- */
+/** GET /materias/{id}: el backend responde 403 si el docente no imparte esa materia. */
 export async function obtenerMateriaDocente(
-  docenteId: string,
+  _docenteId: string,
   materiaId: string,
 ): Promise<MateriaInDB | null> {
-  const materias = await listarMateriasDocente(docenteId);
-  return materias.find((m) => m._id === materiaId) ?? null;
+  try {
+    const { data } = await apiClient.get<MateriaInDB>(`/materias/${materiaId}`);
+    return data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && [403, 404, 422].includes(error.response?.status ?? 0)) return null;
+    throw error;
+  }
 }
 
 export async function crearMateria(payload: MateriaCreate): Promise<MateriaInDB> {
@@ -44,21 +45,20 @@ export async function matricularAlumno(
   return data;
 }
 
-/**
- * PENDIENTE EN BACKEND: GET /api/v1/materias/{materia_id}/alumnos -> UsuarioOut[]
- */
-export async function listarAlumnosMateria(materiaId: string): Promise<UsuarioOut[]> {
-  const { data } = await apiClient.get<UsuarioOut[]>(`/materias/${materiaId}/alumnos`);
+export async function listarAlumnosMateria(materiaId: string): Promise<AlumnoEnMateriaOut[]> {
+  const { data } = await apiClient.get<AlumnoEnMateriaOut[]>(`/materias/${materiaId}/alumnos`);
   return data;
 }
 
-/**
- * PENDIENTE EN BACKEND: DELETE /api/v1/materias/{materia_id}/alumnos/{alumno_id}
- * -> MateriaInDB actualizada (igual que el POST de matrícula).
- */
+/** Quitar es por `_id` del alumno (matricular es por código). Devuelve la materia actualizada. */
 export async function darDeBajaAlumno(materiaId: string, alumnoId: string): Promise<MateriaInDB> {
   const { data } = await apiClient.delete<MateriaInDB>(
     `/materias/${materiaId}/alumnos/${alumnoId}`,
   );
+  return data;
+}
+
+export async function actualizarMateria(materiaId: string, cambios: MateriaUpdate): Promise<MateriaInDB> {
+  const { data } = await apiClient.patch<MateriaInDB>(`/materias/${materiaId}`, cambios);
   return data;
 }

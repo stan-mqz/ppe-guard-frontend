@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { enrolarAlumno, type ResultadoEnrolamiento } from "@/api/biometria";
 import { getApiErrorMessage } from "@/api/client";
+import { USE_MOCKS } from "@/api/config";
 import { ErrorState } from "@/components/AsyncState";
 import { Button, buttonClass } from "@/components/Button";
 import { Card, Skeleton } from "@/components/Card";
@@ -271,22 +272,24 @@ export const EnrolamientoCapturaPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<ResultadoEnrolamiento | null>(null);
 
+  // El backend captura el rostro con la cámara del servidor al crear el alumno
+  // (POST /usuarios/alumnos): el navegador no pide cámara ni sube imágenes.
+  // Solo la demo, que no tiene servidor, muestra la cámara del navegador.
   useEffect(() => {
-    void iniciar();
+    if (USE_MOCKS) void iniciar();
   }, [iniciar]);
 
-  const camaraLista = estado === "activa" && !foto;
-  const rostro = useRostroDetectado(videoRef, camaraLista);
+  const camaraLista = USE_MOCKS ? estado === "activa" && !foto : !resultado;
+  const rostro = useRostroDetectado(videoRef, USE_MOCKS && camaraLista);
 
   const capturarRostro = async () => {
-    const imagen = capturar();
-    if (!imagen || !datos) return;
+    const imagen = USE_MOCKS ? capturar() : null;
+    if ((USE_MOCKS && !imagen) || !datos) return;
     const primera = materias?.find((m) => m._id === datos.materiasIds[0]);
 
     setFoto(imagen);
     setEnviando(true);
     setError(null);
-    // Se libera la cámara del navegador: el backend toma el rostro con la cámara IA del equipo.
     detener();
     try {
       setResultado(
@@ -302,9 +305,11 @@ export const EnrolamientoCapturaPage = () => {
         ),
       );
     } catch (e) {
+      // 422: no se detectó exactamente un rostro · 409: el carnet ya existe · 500: sin cámara.
+      // Los datos del paso 1 se conservan, así que basta con volver a capturar.
       setError(getApiErrorMessage(e, "No se pudo registrar el rostro. Intente de nuevo."));
       setFoto(null);
-      void iniciar();
+      if (USE_MOCKS) void iniciar();
     } finally {
       setEnviando(false);
     }
@@ -319,13 +324,21 @@ export const EnrolamientoCapturaPage = () => {
           <h2 className="text-lg font-bold text-slate-800">Cámara de Enrolamiento</h2>
 
           <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-slate-900">
-            {foto ? (
+            {!USE_MOCKS ? (
+              <div className="absolute inset-x-0 bottom-0 bg-black/50 p-4 text-center text-sm text-white">
+                {enviando
+                  ? "Capturando con la cámara IA del equipo... puede tardar varios segundos."
+                  : resultado
+                    ? "Rostro capturado por la cámara IA del equipo."
+                    : "La captura se hace con la cámara conectada al equipo de PPE Guard. Ubique al alumno frente a ella, solo él en cuadro, y pulse “Capturar Rostro”."}
+              </div>
+            ) : foto ? (
               <img src={foto} alt="Rostro capturado" className="h-full w-full -scale-x-100 object-cover" />
             ) : (
               <video ref={videoRef} autoPlay muted playsInline className="h-full w-full -scale-x-100 object-cover" />
             )}
 
-            {(camaraLista || foto) && (
+            {(camaraLista || foto || !USE_MOCKS) && (
               <div
                 aria-hidden="true"
                 className={clsx(
@@ -335,7 +348,7 @@ export const EnrolamientoCapturaPage = () => {
               />
             )}
 
-            {camaraLista && rostro !== false && (
+            {USE_MOCKS && camaraLista && rostro !== false && (
               <span className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-emerald-500 px-3 py-1 text-xs font-bold uppercase text-white">
                 {rostro ? "Rostro reconocido" : "Cámara lista • centre el rostro"}
               </span>
@@ -346,12 +359,12 @@ export const EnrolamientoCapturaPage = () => {
               </span>
             )}
 
-            {estado === "solicitando" && (
+            {USE_MOCKS && estado === "solicitando" && (
               <p className="absolute inset-0 flex items-center justify-center text-sm text-white/80">
                 Solicitando acceso a la cámara...
               </p>
             )}
-            {(estado === "denegada" || estado === "interrumpida") && !foto && (
+            {USE_MOCKS && (estado === "denegada" || estado === "interrumpida") && !foto && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-white">
                 <AlertTriangle className="h-8 w-8 text-rose-400" aria-hidden="true" />
                 <p className="text-sm">
@@ -428,8 +441,9 @@ export const EnrolamientoCapturaPage = () => {
                 {datos?.nombre} • {datos?.codigo}
               </p>
               <p className="mt-2 text-slate-500">
-                Centre el rostro del alumno en el óvalo y pulse “Capturar Rostro” para generar su vector
-                facial.
+                {USE_MOCKS
+                  ? "Centre el rostro del alumno en el óvalo y pulse “Capturar Rostro” para generar su vector facial."
+                  : "Con el alumno mirando a la cámara del equipo, pulse “Capturar Rostro” para generar su vector facial."}
               </p>
             </div>
           )}

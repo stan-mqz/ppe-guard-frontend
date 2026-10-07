@@ -8,7 +8,8 @@ import type {
 } from "@/types/portal";
 
 // Todo este archivo es PENDIENTE EN BACKEND: hoy PPE_Guard solo expone los POST
-// de creación (src/api/usuarios.ts).
+// de creación y GET /usuarios/{id} (src/api/usuarios.ts). No hay forma de
+// listar ni editar usuarios (FRONTEND.md §11).
 
 /** GET /usuarios/me -> perfil completo del usuario autenticado. */
 export async function obtenerMiPerfil(): Promise<UsuarioDetalle> {
@@ -22,7 +23,7 @@ export async function listarUsuarios(rol: Rol): Promise<UsuarioDetalle[]> {
   return data;
 }
 
-/** GET /usuarios/{id} */
+/** GET /usuarios/{id}: existe en el backend, pero sin los campos extra de UsuarioDetalle. */
 export async function obtenerUsuario(usuarioId: string): Promise<UsuarioDetalle> {
   const { data } = await apiClient.get<UsuarioDetalle>(`/usuarios/${usuarioId}`);
   return data;

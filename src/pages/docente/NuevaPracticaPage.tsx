@@ -1,7 +1,8 @@
 import { ArrowRight, Camera } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { getApiErrorMessage } from "@/api/client";
+import { USE_MOCKS } from "@/api/config";
 import { listarMateriasDetalle, listarTemas } from "@/api/materiasDetalle";
 import { iniciarPractica, obtenerPracticaActiva } from "@/api/practicas";
 import { ErrorState } from "@/components/AsyncState";
@@ -17,34 +18,84 @@ import type { PracticaNueva } from "@/types/portal";
 import { etiquetaSeccion } from "@/utils/materia";
 
 // ---------------------------------------------------------------------------
-// Paso 2: permiso de cámara
+// Paso 2: conexión de la cámara
 // ---------------------------------------------------------------------------
+
+// Con el backend real la cámara es la del servidor: POST /practicas la enciende
+// y el navegador nunca pide getUserMedia (si la tomara, el servidor no podría
+// abrirla). Solo la demo, que no tiene servidor de video, usa la del navegador.
+const TEXTOS = USE_MOCKS
+  ? {
+      titulo: "Solicitando acceso a la cámara de la laptop",
+      detalle: (
+        <>
+          El navegador le mostrará una ventana de permisos. Pulse <strong>“Permitir”</strong> para que el
+          sistema InduDetect pueda verificar la indumentaria de los alumnos.
+        </>
+      ),
+      pasos: [
+        "Pulse “Permitir” en el aviso del navegador (junto a la barra de direcciones).",
+        "Mantenga la cámara apuntando hacia la entrada del laboratorio.",
+      ],
+      espera: "Esperando confirmación de señal...",
+      error: "No se obtuvo acceso a la cámara. Revise que no esté bloqueada en el navegador ni en uso por otra aplicación.",
+    }
+  : {
+      titulo: "Conectando con la cámara IA del laboratorio",
+      detalle: (
+        <>
+          El servidor de PPE Guard está encendiendo la cámara conectada al equipo del laboratorio. No
+          necesita conceder permisos en el navegador.
+        </>
+      ),
+      pasos: [
+        "Verifique que la cámara esté conectada al equipo donde corre el servidor.",
+        "Manténgala apuntando hacia la entrada del laboratorio.",
+      ],
+      espera: "Esperando confirmación de señal...",
+      error: "No se pudo iniciar la práctica.",
+    };
 
 function PasoCamara({ practica, onVolver }: { practica: PracticaNueva; onVolver: () => void }) {
   const navigate = useNavigate();
-  const { estado, iniciar, detener } = useCamera();
+  const { iniciar, detener } = useCamera();
+  const [estado, setEstado] = useState<"conectando" | "iniciando" | "error">("conectando");
   const [error, setError] = useState<string | null>(null);
+  const turno = useRef(0);
 
   const conectar = async () => {
+    const miTurno = ++turno.current;
     setError(null);
-    if (!(await iniciar())) return;
-    // El permiso ya quedó concedido: la vista en vivo vuelve a abrir la cámara.
-    detener();
+    setEstado("conectando");
+    if (USE_MOCKS) {
+      const concedida = await iniciar();
+      if (miTurno !== turno.current) return;
+      if (!concedida) return setEstado("error");
+      // El permiso ya quedó concedido: la vista en vivo vuelve a abrir la cámara.
+      detener();
+    }
+    setEstado("iniciando");
     try {
       const creada = await iniciarPractica(practica);
       navigate(`/app/practicas/${creada._id}/en-vivo`, { replace: true });
     } catch (e) {
-      setError(getApiErrorMessage(e, "No se pudo iniciar la práctica."));
+      // 409: ya hay una práctica en curso · 500: el servidor no pudo abrir la cámara.
+      setError(getApiErrorMessage(e, TEXTOS.error));
+      setEstado("error");
     }
   };
 
   useEffect(() => {
-    void conectar();
+    // En desarrollo StrictMode monta dos veces: se espera un instante para no
+    // enviar dos POST /practicas (el segundo respondería 409).
+    const id = setTimeout(() => void conectar(), 50);
+    return () => {
+      clearTimeout(id);
+      turno.current++;
+    };
     // Solo al entrar al paso; los reintentos van por el botón.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const denegada = estado === "denegada";
 
   return (
     <Card className="mx-auto max-w-xl space-y-5 text-center">
@@ -52,17 +103,11 @@ function PasoCamara({ practica, onVolver }: { practica: PracticaNueva; onVolver:
         <Camera className="h-9 w-9" aria-hidden="true" />
       </span>
       <Eyebrow>Paso 2 de 3 • Conexión de dispositivo</Eyebrow>
-      <h2 className="text-xl font-bold text-slate-800">Solicitando acceso a la cámara de la laptop</h2>
-      <p className="text-sm text-slate-500">
-        El navegador le mostrará una ventana de permisos. Pulse <strong>“Permitir”</strong> para que el
-        sistema InduDetect pueda verificar la indumentaria de los alumnos.
-      </p>
+      <h2 className="text-xl font-bold text-slate-800">{TEXTOS.titulo}</h2>
+      <p className="text-sm text-slate-500">{TEXTOS.detalle}</p>
 
       <ol className="space-y-3 rounded-xl bg-slate-50 p-4 text-left text-sm text-slate-700">
-        {[
-          "Pulse “Permitir” en el aviso del navegador (junto a la barra de direcciones).",
-          "Mantenga la cámara apuntando hacia la entrada del laboratorio.",
-        ].map((texto, i) => (
+        {TEXTOS.pasos.map((texto, i) => (
           <li key={texto} className="flex items-start gap-3">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">
               {i + 1}
@@ -72,11 +117,10 @@ function PasoCamara({ practica, onVolver }: { practica: PracticaNueva; onVolver:
         ))}
       </ol>
 
-      {denegada || error ? (
+      {estado === "error" ? (
         <div className="space-y-3">
           <p role="alert" className="text-sm font-medium text-red-600">
-            {error ??
-              "No se obtuvo acceso a la cámara. Revise que no esté bloqueada en el navegador ni en uso por otra aplicación."}
+            {error ?? TEXTOS.error}
           </p>
           <div className="flex justify-center gap-3">
             <Button variant="secondary" onClick={onVolver}>
@@ -88,7 +132,7 @@ function PasoCamara({ practica, onVolver }: { practica: PracticaNueva; onVolver:
       ) : (
         <p className="flex items-center justify-center gap-2 text-sm font-semibold text-slate-600">
           <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-          {estado === "solicitando" ? "Esperando confirmación de señal..." : "Iniciando la práctica..."}
+          {estado === "conectando" ? TEXTOS.espera : "Iniciando la práctica..."}
         </p>
       )}
     </Card>
@@ -121,16 +165,21 @@ export const NuevaPracticaPage = () => {
 
   const materia = materias.data?.find((m) => m._id === materiaId);
   const tema = temas.data?.find((t) => String(t.numero) === numero);
-  const listo = Boolean(materia && tema);
+  // El backend aún no tiene programa de prácticas por materia: si no hay temas
+  // que elegir, la práctica se inicia solo con la materia.
+  const sinTemas = !temas.loading && (Boolean(temas.error) || temas.data?.length === 0);
+  const listo = Boolean(materia && (tema || sinTemas));
+  // /practicas/active devuelve la práctica en curso aunque sea de otro docente.
+  const activaPropia = activa.data?.docente_id === session.payload.uid;
 
   return (
     <>
       <Topbar title="Configurar Nueva Práctica de Laboratorio" />
 
       <div className="space-y-6 p-8">
-        {paso === 2 && materia && tema ? (
+        {paso === 2 && materia && listo ? (
           <PasoCamara
-            practica={{ materia_id: materia._id, numero: tema.numero, tema: tema.tema }}
+            practica={{ materia_id: materia._id, numero: tema?.numero, tema: tema?.tema }}
             onVolver={() => setPaso(1)}
           />
         ) : (
@@ -149,11 +198,15 @@ export const NuevaPracticaPage = () => {
             {activa.data && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
                 <p className="text-sm font-medium text-amber-800">
-                  Ya tiene una práctica en curso. Finalícela antes de iniciar otra.
+                  {activaPropia
+                    ? "Ya tiene una práctica en curso. Finalícela antes de iniciar otra."
+                    : "Hay otra práctica en curso en el servidor (de otro docente). Solo puede haber una a la vez: espere a que finalice."}
                 </p>
-                <Link to={`/app/practicas/${activa.data._id}/en-vivo`} className={buttonClass("accent")}>
-                  Reanudar práctica
-                </Link>
+                {activaPropia && (
+                  <Link to={`/app/practicas/${activa.data._id}/en-vivo`} className={buttonClass("accent")}>
+                    Reanudar práctica
+                  </Link>
+                )}
               </div>
             )}
 
@@ -189,18 +242,20 @@ export const NuevaPracticaPage = () => {
                     </Select>
                   </Field>
 
-                  <Field label="Práctica de Laboratorio" required error={temas.error ?? undefined}>
+                  <Field label="Práctica de Laboratorio" required={!sinTemas}>
                     <Select
                       value={numero}
                       onChange={(e) => setNumero(e.target.value)}
-                      disabled={!materia || temas.loading}
+                      disabled={!materia || temas.loading || sinTemas}
                     >
                       <option value="">
                         {!materia
                           ? "Primero seleccione la materia"
                           : temas.loading
                             ? "Cargando prácticas..."
-                            : "Seleccione la práctica"}
+                            : sinTemas
+                              ? "Práctica de laboratorio (sin programa registrado)"
+                              : "Seleccione la práctica"}
                       </option>
                       {materia &&
                         temas.data?.map((t) => (

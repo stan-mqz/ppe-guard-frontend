@@ -13,6 +13,7 @@ import { useAsync } from "@/hooks/useAsync";
 import type { FilaAsistencia } from "@/types";
 import type { MateriaVista } from "@/types/portal";
 import { formatFechaHora } from "@/utils/format";
+import { etiquetaEpp } from "@/utils/materia";
 
 const Dato = ({ label, children, tone }: { label: string; children: string; tone?: "alerta" }) => (
   <div>
@@ -37,7 +38,7 @@ function columnasSesion(epp: string[]): Column<FilaAsistencia>[] {
     },
     ...epp.map(
       (prenda): Column<FilaAsistencia> => ({
-        header: prenda,
+        header: etiquetaEpp(prenda),
         cell: (f) =>
           !f.presente ? (
             <span className="text-slate-400">—</span>

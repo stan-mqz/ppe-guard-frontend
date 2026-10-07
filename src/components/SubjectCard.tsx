@@ -1,5 +1,6 @@
 import type { MateriaInDB } from "@/types";
 import { Link } from "react-router-dom";
+import { etiquetaEpp } from "@/utils/materia";
 
 interface SubjectCardProps {
   materia: MateriaInDB;
@@ -38,7 +39,7 @@ export const SubjectCard = ({ materia, ppe }: SubjectCardProps) => {
                 className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700"
               >
                 <span className="h-1.5 w-1.5 rounded-full bg-blue-900"></span>
-                {item}
+                {etiquetaEpp(item)}
               </span>
             ))
           )}

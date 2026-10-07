@@ -251,6 +251,9 @@ const FECHAS = ["2026-10-28", "2026-11-04", "2026-11-11", "2026-11-18"];
 const HORAS = ["10:00", "13:00", "15:00"];
 const pad = (n: number) => String(n).padStart(2, "0");
 
+/** Hora local -> formato del backend: ISO en UTC y sin zona horaria. */
+export const fechaApi = (fecha: Date | string = new Date()) => new Date(fecha).toISOString().slice(0, -1);
+
 function crearPracticasYAsistencias(materias: MateriaDetalle[]) {
   const practicas: PracticaDetalle[] = [];
   const asistencias: AsistenciaDetalle[] = [];
@@ -262,14 +265,14 @@ function crearPracticasYAsistencias(materias: MateriaDetalle[]) {
     const epp = materia.epp ?? [];
 
     for (let j = 0; j < total; j++) {
-      const inicio = `${FECHAS[j]}T${horaBase}:00`;
+      const inicio = fechaApi(`${FECHAS[j]}T${horaBase}:00`);
       const practica: PracticaDetalle = {
         _id: `pra-${pad(k + 1)}-${j + 1}`,
         materia_id: materia._id,
         docente_id: materia.docente_id,
         fecha: inicio,
         hora_inicio: inicio,
-        hora_fin: `${FECHAS[j]}T${pad(Number(horaBase.slice(0, 2)) + 2)}:00:00`,
+        hora_fin: fechaApi(`${FECHAS[j]}T${pad(Number(horaBase.slice(0, 2)) + 2)}:00:00`),
         estado: "finalizada",
         numero: j + 1,
         tema: temas[j].tema,
@@ -299,7 +302,7 @@ function crearPracticasYAsistencias(materias: MateriaDetalle[]) {
           practica_id: practica._id,
           materia_id: materia._id,
           alumno_id: alumnoId,
-          hora_identificacion: `${FECHAS[j]}T${hh}:${pad(Math.floor(segundos / 60))}:${pad(segundos % 60)}`,
+          hora_identificacion: fechaApi(`${FECHAS[j]}T${hh}:${pad(Math.floor(segundos / 60))}:${pad(segundos % 60)}`),
           cumplio_indumentaria: faltantes.length === 0,
           faltantes,
         });

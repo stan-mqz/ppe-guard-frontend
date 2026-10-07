@@ -15,3 +15,9 @@ export async function crearAlumno(payload: AlumnoCreate): Promise<UsuarioOut> {
   const { data } = await apiClient.post<UsuarioOut>("/usuarios/alumnos", payload);
   return data;
 }
+
+/** GET /usuarios/{id} (coordinador, docente). */
+export async function obtenerUsuario(usuarioId: string): Promise<UsuarioOut> {
+  const { data } = await apiClient.get<UsuarioOut>(`/usuarios/${usuarioId}`);
+  return data;
+}

@@ -4,7 +4,8 @@ export type Rol = "admin" | "coordinador" | "docente" | "alumno";
 export type Area = "civil" | "medicina";
 export type EstadoPractica = "activa" | "finalizada";
 
-// Los datetime llegan como string ISO 8601
+// Los datetime llegan como string ISO 8601 en UTC pero SIN zona horaria
+// ("2026-10-06T14:02:11.532000"): hay que leerlos con parseFechaApi (utils/format).
 export type ISODateTime = string;
 
 // --- Health (GET /health) ---
@@ -36,7 +37,7 @@ export interface JwtPayload {
   exp: number;
 }
 
-// --- Usuarios (POST /usuarios/coordinadores | docentes | alumnos) ---
+// --- Usuarios (POST /usuarios/coordinadores | docentes | alumnos, GET /usuarios/{id}) ---
 
 export interface UsuarioOut {
   _id: string;
@@ -46,6 +47,15 @@ export interface UsuarioOut {
   carrera?: string | null;
   facultad?: string | null;
   coordinador_id?: string | null;
+}
+
+// GET /materias/{materia_id}/alumnos
+export interface AlumnoEnMateriaOut {
+  _id: string;
+  codigo: string;
+  nombre: string;
+  carrera?: string | null;
+  facultad?: string | null;
 }
 
 export interface CoordinadorCreate {
@@ -70,7 +80,7 @@ export interface AlumnoCreate {
   facultad: string;
 }
 
-// --- Materias (POST/GET /materias, POST /materias/{materia_id}/alumnos) ---
+// --- Materias (POST/GET /materias, GET/PATCH /materias/{id}, .../alumnos) ---
 
 export interface MateriaCreate {
   nombre: string;
@@ -86,6 +96,14 @@ export interface MateriaInDB extends MateriaCreate {
   _id: string;
   coordinador_id: string;
   alumnos_ids: string[]; // default []
+}
+
+// PATCH /materias/{materia_id}: area y docente_id no se pueden cambiar
+export interface MateriaUpdate {
+  nombre?: string;
+  carrera?: string;
+  facultad?: string;
+  aula?: string;
 }
 
 export interface AlumnoEnrollRequest {
@@ -179,53 +197,49 @@ export interface ReportePractica {
   detalle: FilaAsistencia[];
 }
 
-// --- Violations / eventos en vivo (WebSocket, no documentado en el OpenAPI) ---
-
-export interface ViolationInDB {
-  _id: string;
-  episode_id: string;
-  session_id: string;
-  track_id: number;
-  faltantes: string[];
-  inicio: string;
-  fin: string | null;
-  estado: "abierto" | "cerrado";
-  evidencia_url: string | null;
-}
+// --- Eventos en vivo (WebSocket /ws/detections; ver FRONTEND.md §7) ---
 
 export interface DeteccionItem {
-  class_name: string;
+  class_name: string; // "Person", "Hardhat", "NO-Hardhat", "Safety Vest", ...
   confidence: number;
   track_id: number | null;
-  bbox_norm: [number, number, number, number];
+  bbox_norm: [number, number, number, number]; // [x1, y1, x2, y2] normalizado 0–1
   is_violation: boolean;
 }
 
+export type FasePractica = "identificacion" | "indumentaria";
+
 export type WsEvent =
   | {
-      evento: "detecciones_frame";
+      evento: "estudiante_identificado";
+      practica_id: string;
+      alumno_id: string;
+      nombre: string;
+      codigo: string;
+      confianza: number; // similitud facial, de 0.60 a 1
+      timestamp: string;
+    }
+  | {
+      evento: "fase_cambiada";
+      practica_id: string;
+      fase: FasePractica;
+      alumno_id?: string; // solo cuando fase === "indumentaria"
+      timestamp: string;
+    }
+  | {
+      evento: "detecciones_frame"; // este evento NO trae practica_id
       frame_width: number;
       frame_height: number;
       items: DeteccionItem[];
       timestamp: string;
     }
   | {
-      evento: "incumplimiento_iniciado";
-      episode_id: string;
-      track_id: number;
+      evento: "asistencia_registrada";
+      practica_id: string;
+      alumno_id: string;
+      cumplio_indumentaria: boolean;
       faltantes: string[];
-      evidencia_url: string | null;
-      timestamp: string;
-    }
-  | {
-      evento: "incumplimiento_actualizado";
-      episode_id: string;
-      faltantes: string[];
-      timestamp: string;
-    }
-  | {
-      evento: "incumplimiento_resuelto";
-      episode_id: string;
+      evidencia_url: string | null; // solo hay foto cuando no cumplió
       timestamp: string;
     };
 
@@ -233,7 +247,7 @@ export type WsEvent =
 
 // HTTPException de FastAPI
 export interface ApiError {
-  detail: string;
+  detail: string | ValidationError[];
 }
 
 // 422 Validation Error

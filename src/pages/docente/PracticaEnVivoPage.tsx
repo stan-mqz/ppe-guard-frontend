@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Award,
   Pause,
+  ScanFace,
   ShieldCheck,
   Square,
   UserCheck,
@@ -12,10 +13,15 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getApiErrorMessage } from "@/api/client";
-import { STREAM_URL, USE_MOCKS } from "@/api/config";
+import { STREAM_URL, USE_MOCKS, urlEvidencia } from "@/api/config";
 import { obtenerHealth } from "@/api/health";
 import { obtenerMateria } from "@/api/materiasDetalle";
-import { finalizarPractica, obtenerPractica, obtenerReporte } from "@/api/practicas";
+import {
+  confirmarIdentificacion,
+  finalizarPractica,
+  obtenerPractica,
+  obtenerReporte,
+} from "@/api/practicas";
 import { ErrorState } from "@/components/AsyncState";
 import { Button, buttonClass } from "@/components/Button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -25,45 +31,180 @@ import { StatusPill } from "@/components/StatusPill";
 import { Topbar } from "@/components/Topbar";
 import { useAsync } from "@/hooks/useAsync";
 import { useCamera } from "@/hooks/useCamera";
-import type { DeteccionItem } from "@/types";
+import type { DeteccionItem, FasePractica, WsEvent } from "@/types";
 import type { ReporteDetalle } from "@/types/portal";
-import { formatHora } from "@/utils/format";
-import { etiquetaSeccion } from "@/utils/materia";
+import { formatHora, msFechaApi } from "@/utils/format";
+import { etiquetaSeccion, listaEpp } from "@/utils/materia";
 import { useDetectionsSocket } from "@/websocket/useDetectionsSocket";
 
 /** Los cuatro estados del panel de video, todos en esta misma ruta. */
 type Vista = "en_vivo" | "finalizada" | "interrumpida" | "completada";
 
-const INTERVALO_REPORTE_MS = 2500;
+// En la demo los registros aparecen solos; con el backend real cada registro
+// llega por el socket (asistencia_registrada) y el sondeo es solo un respaldo.
+const INTERVALO_REPORTE_MS = USE_MOCKS ? 2500 : 15000;
+/** La revisión de indumentaria dura 6 segundos fijos en el backend. */
+const REVISION_MS = 6000;
+
+interface Identificado {
+  alumno_id: string;
+  nombre: string;
+  codigo: string;
+  confianza: number;
+}
+
+interface Resultado {
+  nombre: string;
+  cumplio: boolean;
+  faltantes: string[];
+  evidencia_url: string | null;
+}
 
 // ---------------------------------------------------------------------------
 // Paneles
 // ---------------------------------------------------------------------------
 
-/** Cajas de detección que envía el backend por /ws/detections (coordenadas normalizadas). */
-const Detecciones = ({ items }: { items: DeteccionItem[] }) => (
-  <>
-    {items.map((d, i) => {
-      const [x1, y1, x2, y2] = d.bbox_norm;
-      return (
-        <div
-          key={d.track_id ?? i}
-          className={clsx("absolute border-2", d.is_violation ? "border-red-500" : "border-emerald-400")}
-          style={{ left: `${x1 * 100}%`, top: `${y1 * 100}%`, width: `${(x2 - x1) * 100}%`, height: `${(y2 - y1) * 100}%` }}
-        >
-          <span
-            className={clsx(
-              "absolute -top-5 left-0 whitespace-nowrap px-1 text-[10px] font-bold text-white",
-              d.is_violation ? "bg-red-500" : "bg-emerald-500",
-            )}
+type PintarDetecciones = (items: DeteccionItem[]) => void;
+
+/**
+ * Cajas de detecciones_frame (coordenadas normalizadas 0–1). Guarda su propio
+ * estado para que los ~3 eventos por segundo no re-rendericen toda la pantalla;
+ * la página le pasa los items a través de `registrar`.
+ */
+function Detecciones({ registrar }: { registrar: (pintar: PintarDetecciones | null) => void }) {
+  const [items, setItems] = useState<DeteccionItem[]>([]);
+  useEffect(() => {
+    registrar(setItems);
+    return () => registrar(null);
+  }, [registrar]);
+
+  return (
+    <>
+      {items.map((d, i) => {
+        const [x1, y1, x2, y2] = d.bbox_norm;
+        return (
+          <div
+            key={d.track_id ?? `i${i}`}
+            className={clsx("absolute border-2", d.is_violation ? "border-red-500" : "border-emerald-400")}
+            style={{ left: `${x1 * 100}%`, top: `${y1 * 100}%`, width: `${(x2 - x1) * 100}%`, height: `${(y2 - y1) * 100}%` }}
           >
-            {d.class_name} {Math.round(d.confidence * 100)}%
-          </span>
+            <span
+              className={clsx(
+                "absolute left-0 top-0 whitespace-nowrap px-1 text-[10px] font-bold text-white",
+                d.is_violation ? "bg-red-500" : "bg-emerald-500",
+              )}
+            >
+              {d.class_name} {Math.round(d.confidence * 100)}%
+            </span>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/** Segundos que faltan para que termine la revisión de indumentaria. */
+function CuentaRegresiva({ hasta }: { hasta: number }) {
+  const [restante, setRestante] = useState(() => Math.max(0, hasta - Date.now()));
+  useEffect(() => {
+    const id = setInterval(() => setRestante(Math.max(0, hasta - Date.now())), 200);
+    return () => clearInterval(id);
+  }, [hasta]);
+  return <>{Math.ceil(restante / 1000)}</>;
+}
+
+interface PanelIdentificacionProps {
+  fase: FasePractica;
+  identificado: Identificado | null;
+  yaRegistrado: boolean;
+  revisionHasta: number | null;
+  resultado: Resultado | null;
+  confirmando: boolean;
+  aviso: string | null;
+  onConfirmar: () => void;
+}
+
+/** Tarjeta del alumno identificado, botón Confirmar y resultado de la última revisión. */
+function PanelIdentificacion({
+  fase,
+  identificado,
+  yaRegistrado,
+  revisionHasta,
+  resultado,
+  confirmando,
+  aviso,
+  onConfirmar,
+}: PanelIdentificacionProps) {
+  const revisando = fase === "indumentaria";
+
+  return (
+    <aside className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5">
+      <div>
+        <p className="text-xs font-semibold uppercase text-slate-500">
+          {revisando ? "Revisando indumentaria" : "Identificación facial"}
+        </p>
+        {identificado ? (
+          <div className="mt-3 space-y-1">
+            <p className="text-lg font-bold leading-tight text-slate-800">{identificado.nombre}</p>
+            <p className="text-sm text-slate-500">
+              {identificado.codigo} • Coincidencia {Math.round(identificado.confianza * 100)}%
+            </p>
+            {yaRegistrado && !revisando && (
+              <p className="text-xs font-semibold text-amber-600">Ya fue registrado en esta práctica.</p>
+            )}
+          </div>
+        ) : (
+          <p className="mt-3 flex items-start gap-2 text-sm text-slate-500">
+            <ScanFace className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+            {revisando
+              ? "Analizando el equipo de protección del alumno..."
+              : "Esperando a que un alumno matriculado mire a la cámara."}
+          </p>
+        )}
+      </div>
+
+      {revisando && revisionHasta ? (
+        <p className="rounded-xl bg-slate-100 px-4 py-3 text-center text-sm font-semibold text-slate-700">
+          Resultado en <CuentaRegresiva key={revisionHasta} hasta={revisionHasta} /> s. Pida al alumno que no
+          se mueva.
+        </p>
+      ) : (
+        <Button onClick={onConfirmar} disabled={!identificado || revisando || confirmando}>
+          {confirmando ? "Confirmando..." : "Confirmar y revisar EPP"}
+        </Button>
+      )}
+
+      {aviso && <p role="alert" className="text-sm font-medium text-red-600">{aviso}</p>}
+
+      {resultado && (
+        <div
+          className={clsx(
+            "mt-auto rounded-xl border p-4 text-sm",
+            resultado.cumplio ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50",
+          )}
+        >
+          <p className="text-xs font-semibold uppercase text-slate-500">Último registro</p>
+          <p className="mt-1 font-bold text-slate-800">{resultado.nombre}</p>
+          <p className={resultado.cumplio ? "text-emerald-700" : "font-semibold text-red-600"}>
+            {resultado.cumplio
+              ? "Indumentaria completa"
+              : `Falta ${listaEpp(resultado.faltantes) || "EPP reglamentario"}`}
+          </p>
+          {resultado.evidencia_url && (
+            <a
+              href={urlEvidencia(resultado.evidencia_url)}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-block font-semibold text-brand hover:underline"
+            >
+              Ver foto de evidencia
+            </a>
+          )}
         </div>
-      );
-    })}
-  </>
-);
+      )}
+    </aside>
+  );
+}
 
 function PanelCompletada({ reporte, lugar, reporteUrl }: { reporte: ReporteDetalle | null; lugar: string; reporteUrl: string }) {
   const pct = reporte && reporte.presentes > 0 ? Math.round((reporte.cumplieron / reporte.presentes) * 100) : null;
@@ -124,7 +265,8 @@ export const PracticaEnVivoPage = () => {
   const inicial = useAsync(
     async () => {
       const practica = await obtenerPractica(practicaId!);
-      return { practica, materia: await obtenerMateria(practica.materia_id) };
+      const materia = practica.materia_id ? await obtenerMateria(practica.materia_id).catch(() => null) : null;
+      return { practica, materia };
     },
     [practicaId],
     "No se pudo cargar la práctica",
@@ -145,11 +287,27 @@ export const PracticaEnVivoPage = () => {
   const camara = useCamera();
   const { iniciar: iniciarCamara, detener: detenerCamara, capturar } = camara;
   const [streamKey, setStreamKey] = useState(0);
-  const { lastEvent } = useDetectionsSocket(!USE_MOCKS && vista === "en_vivo" && Boolean(practica));
-  const detecciones = lastEvent?.evento === "detecciones_frame" ? lastEvent.items : [];
+
+  // --- Flujo real: identificación -> Confirmar -> revisión de indumentaria ---
+  const [fase, setFase] = useState<FasePractica>("identificacion");
+  const [identificado, setIdentificado] = useState<Identificado | null>(null);
+  const [revisionHasta, setRevisionHasta] = useState<number | null>(null);
+  const [resultado, setResultado] = useState<Resultado | null>(null);
+  const [confirmandoAlumno, setConfirmandoAlumno] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const pintar = useRef<PintarDetecciones | null>(null);
+  const registrarPintor = useCallback((fn: PintarDetecciones | null) => {
+    pintar.current = fn;
+  }, []);
+  const identificadoRef = useRef(identificado);
+  identificadoRef.current = identificado;
+  const reporteRef = useRef<ReporteDetalle | null>(null);
 
   const enVivo = vista === "en_vivo";
   const yaFinalizada = practica?.estado === "finalizada";
+  const yaRegistrado = Boolean(
+    identificado && reporte?.detalle.some((f) => f.alumno_id === identificado.alumno_id && f.presente),
+  );
 
   // Una práctica ya cerrada (p. ej. al recargar) abre directo en el resumen.
   useEffect(() => {
@@ -183,6 +341,56 @@ export const PracticaEnVivoPage = () => {
     () => obtenerReporte(practicaId!).then(setReporte).catch(() => undefined),
     [practicaId],
   );
+  reporteRef.current = reporte;
+
+  const onEvento = (e: WsEvent) => {
+    if (e.evento === "detecciones_frame") return pintar.current?.(e.items);
+    // El socket es un broadcast global: se ignora lo que no sea de esta práctica.
+    if (e.practica_id !== practicaId) return;
+
+    if (e.evento === "estudiante_identificado") {
+      setAviso(null);
+      setIdentificado({ alumno_id: e.alumno_id, nombre: e.nombre, codigo: e.codigo, confianza: e.confianza });
+    } else if (e.evento === "fase_cambiada") {
+      setFase(e.fase);
+      if (e.fase === "indumentaria") {
+        setRevisionHasta(Date.now() + REVISION_MS);
+      } else {
+        // De vuelta en identificación: se limpian las cajas y la tarjeta del alumno.
+        setRevisionHasta(null);
+        setIdentificado(null);
+        pintar.current?.([]);
+      }
+    } else if (e.evento === "asistencia_registrada") {
+      const fila = reporteRef.current?.detalle.find((f) => f.alumno_id === e.alumno_id);
+      const actual = identificadoRef.current;
+      setResultado({
+        nombre: fila?.nombre ?? (actual?.alumno_id === e.alumno_id ? actual.nombre : "Alumno"),
+        cumplio: e.cumplio_indumentaria,
+        faltantes: e.faltantes,
+        evidencia_url: e.evidencia_url,
+      });
+      void cargarReporte();
+    }
+  };
+  useDetectionsSocket(onEvento, !USE_MOCKS && vista === "en_vivo" && Boolean(practica));
+
+  const confirmar = async () => {
+    if (!identificado) return;
+    setConfirmandoAlumno(true);
+    setAviso(null);
+    try {
+      await confirmarIdentificacion(practicaId!, identificado.alumno_id);
+    } catch (error) {
+      // 409: el alumno se retiró y el servidor ya olvidó esa identificación.
+      setIdentificado(null);
+      setAviso(
+        `${getApiErrorMessage(error, "No se pudo confirmar la identificación.")}. Pida al alumno que vuelva a mirar a la cámara.`,
+      );
+    } finally {
+      setConfirmandoAlumno(false);
+    }
+  };
   const hayPractica = Boolean(practica);
   useEffect(() => {
     if (!hayPractica) return;
@@ -214,7 +422,9 @@ export const PracticaEnVivoPage = () => {
     if (!navigator.onLine) return setDiagnostico("Este equipo no tiene conexión de red.");
     try {
       await obtenerHealth();
-      setDiagnostico("El servidor responde con normalidad: el problema está en la cámara. Verifique que esté conectada y que ninguna otra aplicación la esté usando.");
+      setDiagnostico(
+        "El servidor responde con normalidad: el problema está en la cámara. Verifique que esté conectada al equipo del laboratorio y que ninguna otra aplicación la esté usando.",
+      );
     } catch {
       setDiagnostico("No se obtuvo respuesta del servidor de PPE Guard. Revise la red del laboratorio.");
     }
@@ -246,16 +456,18 @@ export const PracticaEnVivoPage = () => {
   }
 
   const presentes = reporte?.presentes ?? null;
+  const nombreMateria = materia?.nombre ?? reporte?.materia_nombre ?? "Práctica de laboratorio";
+  const lugar = materia?.aula ?? "—";
   const incidencias = (reporte?.detalle ?? [])
     .filter((f) => f.presente && f.hora_identificacion)
-    .sort((a, b) => Date.parse(b.hora_identificacion!) - Date.parse(a.hora_identificacion!))
+    .sort((a, b) => msFechaApi(b.hora_identificacion!) - msFechaApi(a.hora_identificacion!))
     .slice(0, 4);
 
   return (
     <>
       <Topbar
-        eyebrow={etiquetaSeccion(materia!)}
-        title={`${practica!.numero ? `Práctica #${practica!.numero}: ` : ""}${practica!.tema ?? materia!.nombre}`}
+        eyebrow={materia ? etiquetaSeccion(materia) : "Práctica de laboratorio"}
+        title={`${practica!.numero ? `Práctica #${practica!.numero}: ` : ""}${practica!.tema ?? nombreMateria}`}
         pill={
           vista === "interrumpida" ? (
             <StatusPill tone="danger">Conexión interrumpida</StatusPill>
@@ -296,33 +508,39 @@ export const PracticaEnVivoPage = () => {
         {vista === "completada" ? (
           <PanelCompletada
             reporte={reporte}
-            lugar={materia!.aula}
-            reporteUrl={`/app/reportes/${materia!._id}/practicas/${practica!._id}`}
+            lugar={lugar}
+            reporteUrl={`/app/reportes/${materia?._id ?? "materia"}/practicas/${practica!._id}`}
           />
         ) : (
-          <div className="relative aspect-video max-h-[60vh] w-full overflow-hidden rounded-2xl bg-[#0F172A]">
+          <div className={clsx("grid gap-4", !USE_MOCKS && enVivo && "xl:grid-cols-[minmax(0,1fr)_320px]")}>
+          <div className="relative flex aspect-video max-h-[60vh] w-full items-center justify-center overflow-hidden rounded-2xl bg-[#0F172A]">
             {enVivo &&
               (USE_MOCKS ? (
                 <video ref={camara.videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
               ) : (
-                <img
-                  key={streamKey}
-                  src={`${STREAM_URL}?t=${streamKey}`}
-                  alt="Cámara IA del laboratorio"
-                  onError={() => setVista("interrumpida")}
-                  className="h-full w-full object-cover"
-                />
+                // El contenedor mide exactamente lo mismo que la imagen (sin
+                // object-cover) para que las cajas normalizadas calcen. El MJPEG
+                // solo envía imagen mientras la práctica está activa.
+                <div className="relative h-full">
+                  <img
+                    key={streamKey}
+                    src={`${STREAM_URL}?t=${streamKey}`}
+                    alt="Cámara IA del laboratorio"
+                    onError={() => setVista("interrumpida")}
+                    className="block h-full w-auto max-w-full"
+                  />
+                  <Detecciones registrar={registrarPintor} />
+                </div>
               ))}
 
             {enVivo && (
               <>
-                <Detecciones items={detecciones} />
                 <span className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-xs font-semibold text-white">
                   <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-                  EN VIVO • InduDetect analizando EPP
+                  EN VIVO • InduDetect {fase === "indumentaria" ? "analizando EPP" : "identificando alumnos"}
                 </span>
                 <span className="absolute bottom-4 left-4 rounded-md bg-black/60 px-2 py-1 text-xs text-white">
-                  {materia!.aula}
+                  {lugar}
                 </span>
                 {USE_MOCKS && (
                   <button
@@ -382,6 +600,20 @@ export const PracticaEnVivoPage = () => {
               </div>
             )}
           </div>
+
+          {!USE_MOCKS && enVivo && (
+            <PanelIdentificacion
+              fase={fase}
+              identificado={identificado}
+              yaRegistrado={yaRegistrado}
+              revisionHasta={revisionHasta}
+              resultado={resultado}
+              confirmando={confirmandoAlumno}
+              aviso={aviso}
+              onConfirmar={confirmar}
+            />
+          )}
+          </div>
         )}
 
         <section className="space-y-3">
@@ -400,7 +632,7 @@ export const PracticaEnVivoPage = () => {
                   descripcion={
                     f.cumplio_indumentaria
                       ? "Acceso validado facialmente"
-                      : `Falta ${f.faltantes.join(", ") || "EPP reglamentario"}`
+                      : `Falta ${listaEpp(f.faltantes) || "EPP reglamentario"}`
                   }
                   hora={formatHora(f.hora_identificacion!)}
                 />
@@ -419,7 +651,7 @@ export const PracticaEnVivoPage = () => {
         onConfirm={finalizar}
         onCancel={() => setConfirmando(false)}
       >
-        Se detendrá la cámara IA y se cerrará el registro de asistencia. Los alumnos que no hayan sido
+        Se apagará la cámara IA del laboratorio y se cerrará el registro de asistencia. Los alumnos que no hayan sido
         identificados quedarán como ausentes.
       </ConfirmDialog>
     </>

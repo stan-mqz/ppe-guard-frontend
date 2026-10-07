@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { ShieldAlert, ShieldCheck, UserCheck, UserX } from "lucide-react";
 import { useParams } from "react-router-dom";
+import { urlEvidencia } from "@/api/config";
 import { obtenerMateria } from "@/api/materiasDetalle";
 import { obtenerPractica, obtenerReporte } from "@/api/practicas";
 import { ErrorState } from "@/components/AsyncState";
@@ -11,9 +12,9 @@ import { StatCard } from "@/components/StatCard";
 import { Topbar } from "@/components/Topbar";
 import { useAsync } from "@/hooks/useAsync";
 import type { FilaAsistencia } from "@/types";
-import type { PracticaDetalle } from "@/types/portal";
+import type { MateriaVista, PracticaDetalle } from "@/types/portal";
 import { formatFechaHora, formatHora } from "@/utils/format";
-import { etiquetaSeccion } from "@/utils/materia";
+import { etiquetaEpp, etiquetaSeccion } from "@/utils/materia";
 
 const Badge = ({ ok, children }: { ok: boolean; children: string }) => (
   <span
@@ -40,7 +41,7 @@ function columnasDesglose(epp: string[]): Column<FilaAsistencia>[] {
     },
     ...epp.map(
       (prenda): Column<FilaAsistencia> => ({
-        header: prenda,
+        header: etiquetaEpp(prenda),
         align: "center",
         cell: (f) =>
           !f.presente ? AUSENTE : f.faltantes.includes(prenda) ? (
@@ -57,9 +58,21 @@ function columnasDesglose(epp: string[]): Column<FilaAsistencia>[] {
         !f.presente ? (
           <span className="text-xs font-bold uppercase text-slate-400">Ausente</span>
         ) : (
-          <Badge ok={f.cumplio_indumentaria === true}>
-            {f.cumplio_indumentaria ? "Completo" : "Incompleto"}
-          </Badge>
+          <span className="inline-flex items-center gap-3">
+            {f.evidencia_url && (
+              <a
+                href={urlEvidencia(f.evidencia_url)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-semibold text-brand hover:underline"
+              >
+                Ver evidencia
+              </a>
+            )}
+            <Badge ok={f.cumplio_indumentaria === true}>
+              {f.cumplio_indumentaria ? "Completo" : "Incompleto"}
+            </Badge>
+          </span>
         ),
     },
   ];
@@ -71,7 +84,9 @@ export const DetallePracticaPage = () => {
   const { data, loading, error, reload } = useAsync(
     async () => {
       const [materia, reporte, practica] = await Promise.all([
-        obtenerMateria(materiaId!),
+        // Sin la materia (p. ej. fuera del alcance del usuario) el reporte se
+        // muestra igual, solo que sin las columnas por prenda.
+        obtenerMateria(materiaId!).catch(() => null as MateriaVista | null),
         obtenerReporte(practicaId!),
         // El número y el tema son un extra: sin ellos el reporte igual se muestra.
         obtenerPractica(practicaId!).catch(() => null as PracticaDetalle | null),
@@ -90,7 +105,9 @@ export const DetallePracticaPage = () => {
       <Topbar title="Detalle de Práctica y Verificación EPP" />
 
       <div className="space-y-6 p-8">
-        <BackLink to={`/app/reportes/${materiaId}`}>Volver al historial de la materia</BackLink>
+        {data?.materia !== null && (
+          <BackLink to={`/app/reportes/${materiaId}`}>Volver al historial de la materia</BackLink>
+        )}
 
         {error ? (
           <Card>
@@ -107,7 +124,9 @@ export const DetallePracticaPage = () => {
               ) : (
                 <>
                   <Eyebrow>
-                    {etiquetaSeccion(data!.materia)} • {data!.materia.aula}
+                    {data!.materia
+                      ? `${etiquetaSeccion(data!.materia)} • ${data!.materia.aula}`
+                      : reporte!.materia_nombre}
                   </Eyebrow>
                   <h2 className="text-xl font-bold text-slate-800">
                     {practica?.numero ? `Práctica #${practica.numero}: ` : ""}
@@ -132,7 +151,7 @@ export const DetallePracticaPage = () => {
                 Desglose Individual de Alumnos y Verificación EPP
               </h2>
               <DataTable
-                columns={columnasDesglose(data?.materia.epp ?? [])}
+                columns={columnasDesglose(data?.materia?.epp ?? [])}
                 rows={reporte?.detalle ?? null}
                 rowKey={(f) => f.alumno_id}
                 loading={loading}
