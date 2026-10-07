@@ -20,14 +20,21 @@ const NAV_BY_ROL: Record<string, NavItem[]> = {
     { to: "/app/mi-perfil", label: "Mi Perfil" },
   ],
   coordinador: [
-    { to: "/app/aulas", label: "Materias" },
-    { to: "/app/docentes", label: "Docentes" },
-    { to: "/app/reportes", label: "Reportes" },
+    { to: "/app/panel", label: "Panel General" },
+    { to: "/app/gestion-materias", label: "Gestión Materias" },
+    { to: "/app/docentes", label: "Gestión Docentes" },
+    { to: "/app/alumnos", label: "Gestión Alumnos" },
+    { to: "/app/centro-reportes", label: "Reportes EPP" },
+    { to: "/app/seguridad", label: "Mi Perfil" },
   ],
   admin: [
+    { to: "/app/panel", label: "Panel General" },
+    { to: "/app/gestion-materias", label: "Gestión Materias" },
+    { to: "/app/docentes", label: "Gestión Docentes" },
+    { to: "/app/alumnos", label: "Gestión Alumnos" },
+    { to: "/app/centro-reportes", label: "Reportes EPP" },
     { to: "/app/coordinadores", label: "Coordinadores" },
-    { to: "/app/aulas", label: "Materias" },
-    { to: "/app/reportes", label: "Reportes" },
+    { to: "/app/seguridad", label: "Mi Perfil" },
   ],
 };
 

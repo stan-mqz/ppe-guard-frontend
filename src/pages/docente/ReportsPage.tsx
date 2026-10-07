@@ -1,4 +1,5 @@
 import {
+  Link,
   ShouldRevalidateFunction,
   useLoaderData,
   useRouteError,
@@ -195,18 +196,20 @@ export const ReportsPage = () => {
 
                 <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
                   {filasVisibles.map((f) => (
-                    <li
-                      key={f.practicaId}
-                      className={`${COLUMNAS} items-center px-4 py-3 text-sm`}
-                    >
-                      <span className="font-semibold text-slate-900">
-                        {formatearFechaHora(f.horaInicio)}
-                      </span>
-                      <span className="text-slate-800">{f.materiaNombre}</span>
-                      <span className="text-xs text-slate-500">{f.aula}</span>
-                      <span className="text-xs text-slate-700">
-                        {f.presentes} de {f.totalMatriculados} Alumnos
-                      </span>
+                    <li key={f.practicaId}>
+                      <Link
+                        to={`/app/reportes/${f.materiaId}/practicas/${f.practicaId}`}
+                        className={`${COLUMNAS} items-center px-4 py-3 text-sm hover:bg-slate-50`}
+                      >
+                        <span className="font-semibold text-slate-900">
+                          {formatearFechaHora(f.horaInicio)}
+                        </span>
+                        <span className="text-slate-800">{f.materiaNombre}</span>
+                        <span className="text-xs text-slate-500">{f.aula}</span>
+                        <span className="text-xs text-slate-700">
+                          {f.presentes} de {f.totalMatriculados} Alumnos
+                        </span>
+                      </Link>
                     </li>
                   ))}
                 </ul>

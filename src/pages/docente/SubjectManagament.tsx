@@ -382,15 +382,23 @@ export const SubjectManagement = () => {
             aria-label="Buscar alumno por nombre o código"
             className="w-full max-w-xs rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-brand focus:outline-none"
           />
-          {!showAddForm && (
-            <button
-              type="button"
-              onClick={() => setShowAddForm(true)}
-              className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark"
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              to="inscribir"
+              className="rounded-lg border border-brand bg-white px-4 py-2.5 text-sm font-semibold text-brand hover:bg-slate-50"
             >
-              + Añadir Alumno
-            </button>
-          )}
+              Buscar en Padrón UNIVO
+            </Link>
+            {!showAddForm && (
+              <button
+                type="button"
+                onClick={() => setShowAddForm(true)}
+                className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark"
+              >
+                + Añadir Alumno
+              </button>
+            )}
+          </div>
         </div>
 
         {showAddForm && <AddAlumnoForm onDone={() => setShowAddForm(false)} />}

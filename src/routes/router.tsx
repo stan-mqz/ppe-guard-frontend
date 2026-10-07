@@ -9,7 +9,6 @@ import type { Rol } from "@/types";
 import { LoginPage, loginAction } from "@/pages/LoginPage";
 import { logoutAction } from "@/pages/LogoutAction";
 import { NotFoundPage } from "@/pages/NotFoundPage";
-import { StubPage } from "@/pages/StubPage";
 import {
   AulasPage,
   aulasLoader,
@@ -28,13 +27,37 @@ import {
 } from "@/pages/docente/SubjectManagament";
 import { reportsLoader, ReportsPage } from "@/pages/docente/ReportsPage";
 import { perfilDocenteLoader, PerfilDocentePage } from "@/pages/docente/ProfilePage";
+import WizardLayout from "@/layouts/WizardLayout";
+import { MisMateriasPage } from "@/pages/alumno/MisMateriasPage";
+import { HistorialGeneralPage, HistorialMateriaPage } from "@/pages/alumno/HistorialPage";
+import { PerfilBiometricoPage } from "@/pages/alumno/PerfilBiometricoPage";
+import { InscribirAlumnoPage } from "@/pages/docente/InscribirAlumnoPage";
+import { NuevaPracticaPage } from "@/pages/docente/NuevaPracticaPage";
+import { PracticaEnVivoPage } from "@/pages/docente/PracticaEnVivoPage";
+import { ReporteMateriaPage } from "@/pages/docente/ReporteMateriaPage";
+import { DetallePracticaPage } from "@/pages/docente/DetallePracticaPage";
+import { PanelPage } from "@/pages/coordinador/PanelPage";
+import { GestionMateriasPage } from "@/pages/coordinador/GestionMateriasPage";
+import { MateriaFormPage } from "@/pages/coordinador/MateriaFormPage";
+import { GestionDocentesPage } from "@/pages/coordinador/GestionDocentesPage";
+import { DocenteFormPage } from "@/pages/coordinador/DocenteFormPage";
+import { GestionAlumnosPage } from "@/pages/coordinador/GestionAlumnosPage";
+import { CentroReportesPage } from "@/pages/coordinador/CentroReportesPage";
+import { SeguridadPage } from "@/pages/coordinador/SeguridadPage";
+import {
+  EnrolamientoCapturaPage,
+  EnrolamientoDatosPage,
+  EnrolamientoInstruccionesPage,
+} from "@/pages/coordinador/EnrolamientoPages";
+import { CoordinadoresPage } from "@/pages/admin/CoordinadoresPage";
+import { CoordinadorFormPage } from "@/pages/admin/CoordinadorFormPage";
 
 // Pantalla de aterrizaje por rol al entrar a "/app" (equivalente a la home de
 // cada portal en el diseño: "Mis Materias", "Panel de Control Docente", etc.).
 const LANDING_BY_ROL: Record<Rol, string> = {
   alumno: "materias",
   docente: "clases",
-  coordinador: "aulas",
+  coordinador: "panel",
   admin: "coordinadores",
 };
 
@@ -75,17 +98,22 @@ export const router = createBrowserRouter([
           {
             path: "materias",
             loader: requireAuth("alumno"),
-            element: <StubPage title="Mis Materias" />,
+            element: <MisMateriasPage />,
+          },
+          {
+            path: "materias/:materiaId/historial",
+            loader: requireAuth("alumno"),
+            element: <HistorialMateriaPage />,
           },
           {
             path: "historial",
             loader: requireAuth("alumno"),
-            element: <StubPage title="Historial de Acceso" />,
+            element: <HistorialGeneralPage />,
           },
           {
             path: "perfil",
             loader: requireAuth("alumno"),
-            element: <StubPage title="Perfil Biométrico" />,
+            element: <PerfilBiometricoPage />,
           },
 
           // --- Docente ---
@@ -103,6 +131,22 @@ export const router = createBrowserRouter([
             action: subjectManagementAction,
             element: <SubjectManagement />,
             errorElement: <SubjectManagementErrorBoundary />,
+          },
+          {
+            path: "materias/:subjectId/inscribir",
+            loader: requireAuth("docente"),
+            element: <InscribirAlumnoPage />,
+          },
+          {
+            // Pasos 1 y 2 del asistente; ?materia= preselecciona la materia.
+            path: "practicas/nueva",
+            loader: requireAuth("docente"),
+            element: <NuevaPracticaPage />,
+          },
+          {
+            path: "practicas/:practicaId/en-vivo",
+            loader: requireAuth("docente"),
+            element: <PracticaEnVivoPage />,
           },
 
           {
@@ -123,12 +167,43 @@ export const router = createBrowserRouter([
           {
             path: "docentes",
             loader: requireAuth("coordinador"),
-            element: <StubPage title="Gestión de Docentes" />,
+            element: <GestionDocentesPage />,
           },
+          { path: "docentes/nuevo", loader: requireAuth("coordinador"), element: <DocenteFormPage /> },
+          { path: "docentes/:id/editar", loader: requireAuth("coordinador"), element: <DocenteFormPage /> },
+          { path: "panel", loader: requireAuth("coordinador"), element: <PanelPage /> },
+          {
+            path: "gestion-materias",
+            loader: requireAuth("coordinador"),
+            element: <GestionMateriasPage />,
+          },
+          {
+            path: "gestion-materias/nueva",
+            loader: requireAuth("coordinador"),
+            element: <MateriaFormPage />,
+          },
+          {
+            path: "gestion-materias/:id/editar",
+            loader: requireAuth("coordinador"),
+            element: <MateriaFormPage />,
+          },
+          { path: "alumnos", loader: requireAuth("coordinador"), element: <GestionAlumnosPage /> },
+          {
+            path: "centro-reportes",
+            loader: requireAuth("coordinador"),
+            element: <CentroReportesPage />,
+          },
+          { path: "seguridad", loader: requireAuth("coordinador"), element: <SeguridadPage /> },
           {
             path: "coordinadores",
             loader: requireAuth("admin"),
-            element: <StubPage title="Gestión de Coordinadores" />,
+            element: <CoordinadoresPage />,
+          },
+          { path: "coordinadores/nuevo", loader: requireAuth("admin"), element: <CoordinadorFormPage /> },
+          {
+            path: "coordinadores/:id/editar",
+            loader: requireAuth("admin"),
+            element: <CoordinadorFormPage />,
           },
 
           // --- Compartido ---
@@ -137,6 +212,29 @@ export const router = createBrowserRouter([
             loader: reportsLoader,
             element: <ReportsPage />,
           },
+          {
+            path: "reportes/:materiaId",
+            loader: requireAuth("docente", "coordinador"),
+            element: <ReporteMateriaPage />,
+          },
+          {
+            path: "reportes/:materiaId/practicas/:practicaId",
+            loader: requireAuth("docente", "coordinador"),
+            element: <DetallePracticaPage />,
+          },
+        ],
+      },
+      {
+        // Enrolamiento biométrico: usa su propio layout (el sidebar muestra los
+        // pasos), por eso va fuera de AppLayout aunque la URL cuelgue de /app.
+        path: "app/alumnos/nuevo",
+        element: <WizardLayout />,
+        loader: requireAuth("coordinador", "docente"),
+        children: [
+          { index: true, loader: () => redirect("datos") },
+          { path: "datos", element: <EnrolamientoDatosPage /> },
+          { path: "instrucciones", element: <EnrolamientoInstruccionesPage /> },
+          { path: "captura", element: <EnrolamientoCapturaPage /> },
         ],
       },
       { path: "*", element: <NotFoundPage /> },

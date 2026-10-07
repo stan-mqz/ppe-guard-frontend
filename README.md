@@ -78,16 +78,33 @@ completo, así que `AulasPage` pagina en el cliente. Cuando agregues
 parámetros de `aulasLoader` a la llamada `listarAulas()` en
 `src/api/aulas.ts`, en vez de cortar el arreglo con `.slice()`.
 
-## 7. Pendiente (pantallas del diseño aún no construidas)
+## 7. Modo demostración (sin backend)
 
-Las rutas ya existen y están protegidas por rol, pero el contenido es un
-placeholder (`StubPage`) para:
+Con `VITE_USE_MOCKS=true` en `.env`, `src/mocks/install.ts` conecta un adapter
+de axios (`src/mocks/server.ts`) que responde las mismas rutas `/api/v1/*` con
+datos en memoria (`src/mocks/data.ts`) y un retraso de 300–600 ms. Las páginas
+y los servicios de `src/api/` no cambian: al quitar la variable, todo vuelve a
+hablar con PPE_Guard.
 
-- Historial de Acceso / Perfil Biométrico (alumno)
-- Gestión de Alumnos — incluye el wizard de enrolamiento biométrico (docente)
-- Reportes EPP (docente/coordinador)
-- Gestión de Docentes / Coordinadores (coordinador/admin)
+| Código       | Rol         | Usuario                          |
+| ------------ | ----------- | -------------------------------- |
+| `U20210452`  | alumno      | Gerardo Alberto Argueta Mendoza  |
+| `DOC-202101` | docente     | Dra. María Elena Ramos           |
+| `EMP-09214`  | coordinador | Lic. Carlos Castillo             |
+| `EMP-00001`  | admin       | Dr. Alejandro Gómez              |
 
-También falta conectar el streaming MJPEG (`GET /api/v1/stream`) y el hook
-`useDetectionsSocket` a una vista en vivo — en el diseño correspondería al
-botón "Iniciar Práctica IA".
+Contraseña de todos: `UNIVO*2026`. Los cambios se guardan en `sessionStorage`
+(sobreviven a una recarga y se reinician al cerrar la pestaña).
+
+## 8. Pendiente en el backend
+
+Las pantallas nuevas usan endpoints que PPE_Guard todavía no expone; están
+marcados como `PENDIENTE EN BACKEND` en `src/api/materiasDetalle.ts`,
+`src/api/usuariosGestion.ts` y `src/api/practicas.ts`, y simulados en
+`src/mocks/server.ts` (que sirve como referencia del contrato esperado). Los
+campos extra que devuelven (`codigo`, `seccion` y `epp` de la materia, `numero`
+y `tema` de la práctica, etc.) están en `src/types/portal.ts`.
+
+En la práctica en vivo, con el backend real se muestra el MJPEG
+`GET /api/v1/stream` y las cajas de `useDetectionsSocket`; en modo demostración
+se usa la cámara del navegador.
