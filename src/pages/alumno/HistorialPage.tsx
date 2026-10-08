@@ -1,36 +1,34 @@
 import { Shirt } from "lucide-react";
 import { useParams } from "react-router-dom";
-import { listarAsistencias } from "@/api/asistencias";
+import { listarMisAsistencias, listarMisMaterias } from "@/api/alumno";
 import { urlEvidencia } from "@/api/config";
-import { listarMateriasDetalle } from "@/api/materiasDetalle";
 import { BackLink } from "@/components/BackLink";
 import { Card, Eyebrow, Skeleton } from "@/components/Card";
 import { DataTable, type Column } from "@/components/DataTable";
 import { Topbar } from "@/components/Topbar";
 import { useAsync } from "@/hooks/useAsync";
-import { useSession } from "@/hooks/useSession";
-import type { AsistenciaDetalle, MateriaVista } from "@/types/portal";
-import { formatFecha, formatHora, msFechaApi } from "@/utils/format";
+import type { AsistenciaAlumno } from "@/types";
+import type { MateriaAlumnoVista } from "@/types/portal";
+import { formatFecha, formatHora } from "@/utils/format";
 import { eppDetectado, listaEpp } from "@/utils/materia";
 
 interface FilaHistorial {
-  asistencia: AsistenciaDetalle;
-  materia?: MateriaVista;
+  asistencia: AsistenciaAlumno;
+  /** Solo si el alumno sigue matriculado: de ahí salen el aula y el EPP. */
+  materia?: MateriaAlumnoVista;
 }
 
-/** Accesos del alumno (más recientes primero) junto con la materia de cada uno. */
-async function cargarHistorial(alumnoId: string) {
-  const [materias, asistencias] = await Promise.all([
-    // PENDIENTE EN BACKEND: el alumno aún no puede consultar materias (403). Sin
-    // ellas el historial igual se muestra, solo que sin materia ni establecimiento.
-    listarMateriasDetalle({ alumno_id: alumnoId }).catch(() => [] as MateriaVista[]),
-    // Para el rol alumno el backend devuelve solo sus propias asistencias.
-    listarAsistencias() as Promise<AsistenciaDetalle[]>,
-  ]);
+/**
+ * Accesos del alumno (GET /alumno/asistencias ya los trae del más reciente al
+ * más antiguo, con materia y docente) junto con sus materias actuales.
+ */
+async function cargarHistorial() {
+  const [materias, asistencias] = await Promise.all([listarMisMaterias(), listarMisAsistencias()]);
   const porId = new Map(materias.map((m) => [m._id, m]));
-  const filas: FilaHistorial[] = asistencias
-    .map((asistencia) => ({ asistencia, materia: porId.get(asistencia.materia_id ?? "") }))
-    .sort((a, b) => msFechaApi(b.asistencia.hora_identificacion) - msFechaApi(a.asistencia.hora_identificacion));
+  const filas: FilaHistorial[] = asistencias.map((asistencia) => ({
+    asistencia,
+    materia: porId.get(asistencia.materia_id ?? ""),
+  }));
   return { materias, filas };
 }
 
@@ -69,28 +67,26 @@ const COLUMNAS: Column<FilaHistorial>[] = [
 
 const COLUMNA_MATERIA: Column<FilaHistorial> = {
   header: "Materia",
-  cell: (f) => f.materia?.nombre ?? "—",
+  cell: (f) => f.asistencia.materia_nombre ?? f.materia?.nombre ?? "—",
   className: "text-slate-800",
 };
 
 /** Historial de una materia: /app/materias/:materiaId/historial */
 export const HistorialMateriaPage = () => {
   const { materiaId } = useParams();
-  const session = useSession();
-  const { data, loading, error, reload } = useAsync(
-    () => cargarHistorial(session.payload.uid),
-    [session.payload.uid],
-    "No se pudo cargar tu historial",
-  );
+  const { data, loading, error, reload } = useAsync(cargarHistorial, [], "No se pudo cargar tu historial");
   const materia = data?.materias.find((m) => m._id === materiaId);
   const filas = data?.filas.filter((f) => f.asistencia.materia_id === materiaId) ?? null;
+  // Si ya no está matriculado, el nombre y el docente salen de sus asistencias.
+  const nombre = materia?.nombre ?? filas?.[0]?.asistencia.materia_nombre ?? null;
+  const docente = materia?.docente_nombre ?? filas?.[0]?.asistencia.docente_nombre ?? null;
 
   return (
     <>
       <Topbar
         title={
-          materia
-            ? `${materia.nombre}${materia.codigo ? ` (${materia.codigo})` : ""} - Historial de Acceso`
+          nombre
+            ? `${nombre}${materia?.codigo ? ` (${materia.codigo})` : ""} - Historial de Acceso`
             : "Historial de Acceso"
         }
       />
@@ -105,9 +101,9 @@ export const HistorialMateriaPage = () => {
           ) : (
             <>
               <h2 className="text-xl font-bold text-slate-800">
-                {materia ? `${materia.nombre}${materia.seccion ? ` - Sección ${materia.seccion}` : ""}` : "Materia no encontrada"}
+                {nombre ? `${nombre}${materia?.seccion ? ` - Sección ${materia.seccion}` : ""}` : "Materia no encontrada"}
               </h2>
-              {materia && <p className="text-sm text-slate-500">Docente: {materia.docente_nombre ?? "Por asignar"}</p>}
+              {nombre && <p className="text-sm text-slate-500">Docente: {docente ?? "Por asignar"}</p>}
             </>
           )}
         </Card>
@@ -120,7 +116,7 @@ export const HistorialMateriaPage = () => {
           error={error}
           onRetry={reload}
           empty={
-            data && !materia
+            data && !nombre
               ? "No estás inscrito en esta materia."
               : "Aún no tienes accesos registrados en esta materia."
           }
@@ -132,12 +128,7 @@ export const HistorialMateriaPage = () => {
 
 /** Todos los accesos del alumno: /app/historial */
 export const HistorialGeneralPage = () => {
-  const session = useSession();
-  const { data, loading, error, reload } = useAsync(
-    () => cargarHistorial(session.payload.uid),
-    [session.payload.uid],
-    "No se pudo cargar tu historial",
-  );
+  const { data, loading, error, reload } = useAsync(cargarHistorial, [], "No se pudo cargar tu historial");
 
   return (
     <>

@@ -7,23 +7,28 @@ import type {
   UsuarioUpdate,
 } from "@/types/portal";
 
-// Todo este archivo es PENDIENTE EN BACKEND: hoy PPE_Guard solo expone los POST
-// de creación y GET /usuarios/{id} (src/api/usuarios.ts). No hay forma de
-// listar ni editar usuarios (FRONTEND.md §11).
+// PPE_Guard expone los POST de creación (src/api/usuarios.ts), GET /usuarios,
+// GET /usuarios/{id}, GET /auth/me y GET /coordinacion/resumen. Lo demás de
+// este archivo (editar, activar/desactivar, padrón, importar, cambiar
+// contraseña) y los campos extra de UsuarioDetalle son PENDIENTE EN BACKEND.
 
-/** GET /usuarios/me -> perfil completo del usuario autenticado. */
+/** GET /auth/me -> el usuario autenticado (sin los campos extra de UsuarioDetalle). */
 export async function obtenerMiPerfil(): Promise<UsuarioDetalle> {
-  const { data } = await apiClient.get<UsuarioDetalle>("/usuarios/me");
+  const { data } = await apiClient.get<UsuarioDetalle>("/auth/me");
   return data;
 }
 
-/** GET /usuarios?rol=... */
+/**
+ * GET /usuarios?rol=... (coordinador, docente). El backend acota por cargo: el
+ * coordinador ve sus docentes y los alumnos de sus materias; el docente, los
+ * alumnos de sus materias; el admin, todos.
+ */
 export async function listarUsuarios(rol: Rol): Promise<UsuarioDetalle[]> {
   const { data } = await apiClient.get<UsuarioDetalle[]>("/usuarios", { params: { rol } });
   return data;
 }
 
-/** GET /usuarios/{id}: existe en el backend, pero sin los campos extra de UsuarioDetalle. */
+/** GET /usuarios/{id}: misma visibilidad que el listado, más uno mismo (403 fuera de ella). */
 export async function obtenerUsuario(usuarioId: string): Promise<UsuarioDetalle> {
   const { data } = await apiClient.get<UsuarioDetalle>(`/usuarios/${usuarioId}`);
   return data;
@@ -62,7 +67,7 @@ export async function cambiarPassword(passwordActual: string, passwordNueva: str
   });
 }
 
-/** GET /coordinacion/resumen -> métricas del panel general. */
+/** GET /coordinacion/resumen -> métricas del panel: lo del cargo del coordinador, o los totales para el admin. */
 export async function obtenerResumenCoordinacion(): Promise<ResumenCoordinacion> {
   const { data } = await apiClient.get<ResumenCoordinacion>("/coordinacion/resumen");
   return data;

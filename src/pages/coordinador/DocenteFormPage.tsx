@@ -4,7 +4,7 @@ import { getApiErrorMessage } from "@/api/client";
 import { USE_MOCKS } from "@/api/config";
 import { guardarMateria, listarFacultades, listarMateriasDetalle } from "@/api/materiasDetalle";
 import { crearDocente } from "@/api/usuarios";
-import { actualizarUsuario, obtenerUsuario } from "@/api/usuariosGestion";
+import { actualizarUsuario, listarUsuarios, obtenerUsuario } from "@/api/usuariosGestion";
 import { ErrorState } from "@/components/AsyncState";
 import { BackLink } from "@/components/BackLink";
 import { Button, buttonClass } from "@/components/Button";
@@ -14,7 +14,7 @@ import { Field, Input, Select } from "@/components/Field";
 import { Topbar } from "@/components/Topbar";
 import { useAsync } from "@/hooks/useAsync";
 import { useSession } from "@/hooks/useSession";
-import type { Facultad, MateriaVista } from "@/types/portal";
+import type { Facultad, MateriaVista, UsuarioDetalle } from "@/types/portal";
 import { coincide } from "@/utils/format";
 
 const LISTA = "/app/docentes";
@@ -26,17 +26,21 @@ export const DocenteFormPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const session = useSession();
+  // El docente queda a cargo de un coordinador. El coordinador manda su propio
+  // id; el admin elige cuál (GET /usuarios?rol=coordinador).
+  const pideCoordinador = !id && session.payload.rol === "admin";
   const { data, loading, error, reload } = useAsync(
     async () => {
-      const [facultades, materias, docente] = await Promise.all([
+      const [facultades, materias, docente, coordinadores] = await Promise.all([
         // PENDIENTE EN BACKEND: sin catálogo de facultades el campo es de texto libre.
         listarFacultades().catch(() => [] as Facultad[]),
         listarMateriasDetalle(),
         id ? obtenerUsuario(id) : null,
+        pideCoordinador ? listarUsuarios("coordinador") : ([] as UsuarioDetalle[]),
       ]);
-      return { facultades, materias, docente };
+      return { facultades, materias, docente, coordinadores };
     },
-    [id],
+    [id, pideCoordinador],
     "No se pudo cargar la ficha del docente",
   );
 
@@ -44,9 +48,6 @@ export const DocenteFormPage = () => {
   const [codigo, setCodigo] = useState("");
   const [facultad, setFacultad] = useState("");
   const [password, setPassword] = useState("");
-  // El docente queda a cargo de un coordinador. El coordinador manda su propio
-  // id; el admin debe indicar cuál (el backend aún no permite listarlos).
-  const pideCoordinador = !USE_MOCKS && !id && session.payload.rol === "admin";
   const [coordinadorId, setCoordinadorId] = useState("");
   const [asignadas, setAsignadas] = useState<string[]>([]);
   const [buscador, setBuscador] = useState<string | null>(null); // null = caja cerrada
@@ -82,9 +83,7 @@ export const DocenteFormPage = () => {
       encontrados.codigo = USE_MOCKS ? "Use el formato DOC-000000." : "Ingrese el código del docente.";
     }
     if (!facultad.trim()) encontrados.facultad = "Indique la facultad.";
-    if (pideCoordinador && !/^[0-9a-f]{24}$/i.test(coordinadorId.trim())) {
-      encontrados.coordinador = "Ingrese el ID del coordinador (24 caracteres hexadecimales).";
-    }
+    if (pideCoordinador && !coordinadorId) encontrados.coordinador = "Seleccione el coordinador a cargo.";
     if (!id && password.length < 8) encontrados.password = "La contraseña debe tener al menos 8 caracteres.";
     if (id && password && password.length < 8) encontrados.password = "La contraseña debe tener al menos 8 caracteres.";
     setErrores(encontrados);
@@ -100,7 +99,7 @@ export const DocenteFormPage = () => {
             await crearDocente({
               ...datos,
               password,
-              coordinador_id: pideCoordinador ? coordinadorId.trim() : session.payload.uid,
+              coordinador_id: pideCoordinador ? coordinadorId : session.payload.uid,
             })
           )._id;
 
@@ -160,12 +159,17 @@ export const DocenteFormPage = () => {
               </div>
 
               {pideCoordinador && (
-                <Field label="Coordinador a Cargo (ID)" required error={errores.coordinador}>
-                  <Input
-                    value={coordinadorId}
-                    onChange={(e) => setCoordinadorId(e.target.value)}
-                    placeholder="_id del coordinador (24 caracteres)"
-                  />
+                <Field label="Coordinador a Cargo" required error={errores.coordinador}>
+                  <Select value={coordinadorId} onChange={(e) => setCoordinadorId(e.target.value)}>
+                    <option value="">
+                      {data!.coordinadores.length > 0 ? "Seleccione un coordinador" : "No hay coordinadores registrados"}
+                    </option>
+                    {data!.coordinadores.map((c) => (
+                      <option key={c._id} value={c._id}>
+                        {c.nombre} ({c.codigo})
+                      </option>
+                    ))}
+                  </Select>
                 </Field>
               )}
 

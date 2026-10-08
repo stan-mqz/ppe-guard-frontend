@@ -10,13 +10,16 @@ import { useAsync } from "@/hooks/useAsync";
 export const PerfilBiometricoPage = () => {
   const { data: perfil, loading, error, reload } = useAsync(obtenerMiPerfil, [], "No se pudo cargar tu perfil");
   const conRostro = perfil?.rostro_registrado === true;
+  // GET /auth/me aún no dice si hay rostro registrado (PENDIENTE EN BACKEND):
+  // sin ese dato no se muestra el estado biométrico en vez de darlo por faltante.
+  const sabeRostro = typeof perfil?.rostro_registrado === "boolean";
 
   return (
     <>
       <Topbar
         title="Perfil Biométrico"
         pill={
-          perfil && !conRostro ? <StatusPill tone="danger">Biometría pendiente</StatusPill> : undefined
+          sabeRostro && !conRostro ? <StatusPill tone="danger">Biometría pendiente</StatusPill> : undefined
         }
       />
 
@@ -51,7 +54,7 @@ export const PerfilBiometricoPage = () => {
           )}
         </Card>
 
-        {perfil && (
+        {sabeRostro && (
           <Card className="flex flex-wrap items-center gap-4">
             <span
               className={`flex h-12 w-12 items-center justify-center rounded-full ${

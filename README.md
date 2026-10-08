@@ -105,9 +105,20 @@ La referencia es `FRONTEND.md` del repo PPE_Guard. Lo que el frontend ya sigue:
   lo define por área; `etiquetaEpp` (`src/utils/materia.ts`) las traduce.
 - **Cámara:** es la del servidor. Iniciar una práctica y enrolar un alumno no
   piden la cámara del navegador (solo el modo demostración la usa).
+- **Sesión:** el token dura 8 horas y se renueva con `POST /auth/refresh` al
+  entrar a la app cuando le quedan menos de 2 (`renovarSesion` en
+  `src/api/auth.ts`). `GET /auth/me` devuelve el usuario del token.
+- **Token por query:** el WebSocket, el stream y las evidencias reciben el token
+  como `?token=` (`urlSocket`, `urlStream` y `urlEvidencia` en `src/api/config.ts`).
 - **Práctica en vivo:** MJPEG de `GET /api/v1/stream` + eventos de
   `/ws/detections` (`useDetectionsSocket`): alumno identificado → Confirmar
   (`POST /practicas/{id}/confirmar`) → revisión de 6 s → asistencia registrada.
+  El primer mensaje del socket es `estado_inicial`, con el que la pantalla se
+  reconstruye tras recargar. Cada docente solo ve y controla su práctica.
+- **Alumno:** "Mis Materias" e "Historial" usan `GET /alumno/materias` y
+  `GET /alumno/asistencias` (`src/api/alumno.ts`).
+- **Usuarios y prácticas:** `GET /usuarios?rol=` y `GET /practicas?materia_id=`
+  ya vienen acotados al cargo de quien pregunta.
 - **Materias:** `GET /materias/{id}` y `PATCH /materias/{id}` (solo nombre,
   carrera, facultad y aula; área y docente no se pueden cambiar).
 
@@ -116,14 +127,10 @@ La referencia es `FRONTEND.md` del repo PPE_Guard. Lo que el frontend ya sigue:
 Lo que las pantallas usan y PPE_Guard todavía no expone está marcado como
 `PENDIENTE EN BACKEND` en `src/api/` y simulado en `src/mocks/server.ts`:
 
-- Listar y editar usuarios (docentes, alumnos, coordinadores), desactivarlos,
-  buscar en el padrón, importar CSV, cambiar contraseña y el resumen del panel.
-  Contra el backend real esas pantallas muestran su estado de error; los
-  formularios de materia y docente piden el `_id` a mano.
-- Endpoints para el alumno: no puede consultar materias (403), así que "Mis
-  Materias" falla y su historial se muestra sin materia ni establecimiento.
+- Editar usuarios, desactivarlos, buscar en el padrón, importar CSV y cambiar
+  contraseña. Contra el backend real esas acciones muestran su error.
+- Los campos extra de usuario (correo, estatus, rostro registrado, última
+  validación) y los contadores de asistencia en el listado de prácticas (se
+  completan con el reporte de cada una).
 - Código, sección y EPP por materia; número y tema de la práctica; eliminar
-  materia; reasignar docente (`src/types/portal.ts`).
-- Listar las prácticas de una materia: se reconstruye agrupando
-  `GET /asistencias` por `practica_id`, así que las prácticas sin asistencias
-  no aparecen.
+  materia; reasignar docente (`src/types/portal.ts`); `GET /practicas/{id}`.

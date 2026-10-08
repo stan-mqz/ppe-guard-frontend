@@ -3,8 +3,11 @@
 // (src/mocks) ya lo devuelve; contra el backend real llega undefined y la UI
 // cae a un valor por defecto.
 
+export type { ResumenCoordinacion } from "@/types";
+
 import type {
   AsistenciaInDB,
+  MateriaAlumno,
   MateriaCreate,
   MateriaInDB,
   PracticaInDB,
@@ -87,7 +90,14 @@ export interface TemaPractica {
 }
 
 export interface AsistenciaDetalle extends AsistenciaInDB {
-  materia_id?: string;
+  materia_id?: string | null;
+}
+
+/** Materia tal como la ve el alumno, con el EPP resuelto del catálogo por área. */
+export interface MateriaAlumnoVista extends MateriaAlumno {
+  codigo?: string;
+  seccion?: string;
+  epp: string[];
 }
 
 export interface ReporteDetalle extends ReportePractica {
@@ -97,15 +107,6 @@ export interface ReporteDetalle extends ReportePractica {
 export interface Facultad {
   nombre: string;
   carreras: string[];
-}
-
-export interface ResumenCoordinacion {
-  materias: number;
-  materias_nuevas: number;
-  materias_lab_activo: number;
-  docentes: number;
-  docentes_activos_hoy: number;
-  alumnos: number;
 }
 
 export interface ImportacionAlumnos {

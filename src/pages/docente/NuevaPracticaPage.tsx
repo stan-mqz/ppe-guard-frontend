@@ -160,7 +160,9 @@ export const NuevaPracticaPage = () => {
     [materiaId],
     "No se pudieron cargar las prácticas de esta materia",
   );
-  // Solo puede haber una práctica en curso (el backend responde 409 si se intenta otra).
+  // La práctica en curso de este docente, si la hay. Solo puede haber una en
+  // todo el servidor: si la tiene otro docente aquí llega null y es el 409 de
+  // POST /practicas (paso 2) el que lo avisa.
   const activa = useAsync(obtenerPracticaActiva, []);
 
   const materia = materias.data?.find((m) => m._id === materiaId);
@@ -169,8 +171,6 @@ export const NuevaPracticaPage = () => {
   // que elegir, la práctica se inicia solo con la materia.
   const sinTemas = !temas.loading && (Boolean(temas.error) || temas.data?.length === 0);
   const listo = Boolean(materia && (tema || sinTemas));
-  // /practicas/active devuelve la práctica en curso aunque sea de otro docente.
-  const activaPropia = activa.data?.docente_id === session.payload.uid;
 
   return (
     <>
@@ -198,15 +198,11 @@ export const NuevaPracticaPage = () => {
             {activa.data && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
                 <p className="text-sm font-medium text-amber-800">
-                  {activaPropia
-                    ? "Ya tiene una práctica en curso. Finalícela antes de iniciar otra."
-                    : "Hay otra práctica en curso en el servidor (de otro docente). Solo puede haber una a la vez: espere a que finalice."}
+                  Ya hay una práctica en curso. Finalícela antes de iniciar otra.
                 </p>
-                {activaPropia && (
-                  <Link to={`/app/practicas/${activa.data._id}/en-vivo`} className={buttonClass("accent")}>
-                    Reanudar práctica
-                  </Link>
-                )}
+                <Link to={`/app/practicas/${activa.data._id}/en-vivo`} className={buttonClass("accent")}>
+                  Reanudar práctica
+                </Link>
               </div>
             )}
 

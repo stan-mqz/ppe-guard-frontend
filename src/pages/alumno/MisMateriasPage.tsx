@@ -1,6 +1,6 @@
 import { MapPin, User } from "lucide-react";
 import { Link } from "react-router-dom";
-import { listarMateriasDetalle } from "@/api/materiasDetalle";
+import { listarMisMaterias } from "@/api/alumno";
 import { ErrorState } from "@/components/AsyncState";
 import { buttonClass } from "@/components/Button";
 import { Card, Eyebrow, Skeleton } from "@/components/Card";
@@ -8,10 +8,10 @@ import { EppTags } from "@/components/EppTag";
 import { Topbar } from "@/components/Topbar";
 import { useAsync } from "@/hooks/useAsync";
 import { useSession } from "@/hooks/useSession";
-import type { MateriaVista } from "@/types/portal";
+import type { MateriaAlumnoVista } from "@/types/portal";
 import { etiquetaSeccion } from "@/utils/materia";
 
-const MateriaCard = ({ materia }: { materia: MateriaVista }) => (
+const MateriaCard = ({ materia }: { materia: MateriaAlumnoVista }) => (
   <Card className="flex flex-col gap-4">
     <div className="space-y-1 border-b border-slate-200 pb-4">
       <Eyebrow>{etiquetaSeccion(materia)}</Eyebrow>
@@ -42,11 +42,7 @@ const MateriaCard = ({ materia }: { materia: MateriaVista }) => (
 
 export const MisMateriasPage = () => {
   const session = useSession();
-  const { data, loading, error, reload } = useAsync(
-    () => listarMateriasDetalle({ alumno_id: session.payload.uid }),
-    [session.payload.uid],
-    "No se pudieron cargar tus materias",
-  );
+  const { data, loading, error, reload } = useAsync(listarMisMaterias, [], "No se pudieron cargar tus materias");
   const conEpp = data?.filter((m) => m.epp.length > 0).length;
 
   return (

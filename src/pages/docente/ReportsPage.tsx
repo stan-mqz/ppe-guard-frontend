@@ -9,7 +9,8 @@ import {
 import { requireAuth } from "@/auth/guards";
 import { getApiErrorMessage } from "@/api/client";
 import { listarMaterias, listarMateriasDocente } from "@/api/materias";
-import { listarAsistencias, obtenerReportePractica } from "@/api/asistencias";
+import { obtenerReportePractica } from "@/api/asistencias";
+import { listarPracticas } from "@/api/practicas";
 import { Header } from "@/components/Header";
 import type { ISODateTime, MateriaInDB } from "@/types";
 import { parseFechaApi } from "@/utils/format";
@@ -44,16 +45,13 @@ export const reportsLoader = async (args: LoaderFunctionArgs) => {
       ? await listarMateriasDocente(session.payload.uid)
       : await listarMaterias();
 
-  const asistenciasPorMateria = await Promise.all(
-    materias.map(async (materia) => ({
-      materia,
-      asistencias: await listarAsistencias({ materia_id: materia._id }),
-    })),
-  );
-
+  // GET /practicas ya viene acotado al rol (docente: sus materias; coordinador:
+  // su cargo) e incluye las prácticas sin ninguna asistencia.
+  const materiaPorId = new Map(materias.map((m) => [m._id, m]));
   const materiaPorPractica = new Map<string, MateriaInDB>();
-  for (const { materia, asistencias } of asistenciasPorMateria) {
-    for (const a of asistencias) materiaPorPractica.set(a.practica_id, materia);
+  for (const p of await listarPracticas()) {
+    const materia = materiaPorId.get(p.materia_id);
+    if (materia) materiaPorPractica.set(p._id, materia);
   }
 
   const practicaIds = [...materiaPorPractica.keys()];

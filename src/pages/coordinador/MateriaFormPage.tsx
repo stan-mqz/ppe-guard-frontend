@@ -55,8 +55,8 @@ export const MateriaFormPage = () => {
   const navigate = useNavigate();
   const { data, loading, error, reload } = useAsync(
     async () => {
-      // PENDIENTE EN BACKEND: catálogo de facultades y listado de docentes. Si
-      // fallan, esos campos pasan a ser de texto libre (el docente, por su ID).
+      // El catálogo de facultades es PENDIENTE EN BACKEND: si falla, el campo
+      // es de texto libre. Lo mismo el docente (por su ID) si falla GET /usuarios.
       const [facultades, docentes, catalogo, materia] = await Promise.all([
         listarFacultades().catch(() => [] as Facultad[]),
         listarUsuarios("docente").catch(() => [] as UsuarioDetalle[]),

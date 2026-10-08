@@ -2,6 +2,7 @@ import { createBrowserRouter, redirect } from "react-router-dom";
 
 import RootLayout from "@/layouts/RootLayout";
 import AppLayout from "@/layouts/AppLayout";
+import { renovarSesion } from "@/api/auth";
 import { requireAuth } from "@/auth/guards";
 import { getSession } from "@/auth/session";
 import type { Rol } from "@/types";
@@ -83,7 +84,12 @@ export const router = createBrowserRouter([
       {
         path: "app",
         element: <AppLayout />,
-        loader: requireAuth(), // cualquier usuario autenticado
+        // Cualquier usuario autenticado. De paso se renueva el token si está por
+        // vencer (POST /auth/refresh), sin bloquear la navegación.
+        loader: (args) => {
+          void renovarSesion();
+          return requireAuth()(args);
+        },
         children: [
           {
             index: true,

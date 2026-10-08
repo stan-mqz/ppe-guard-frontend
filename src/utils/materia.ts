@@ -18,7 +18,7 @@ export const etiquetaEpp = (prenda: string) => EPP_LABEL[prenda] ?? prenda;
 export const listaEpp = (prendas: string[]) => prendas.map(etiquetaEpp).join(", ");
 
 /** "QO101 • Sección A" (o la carrera, mientras el backend no envíe código y sección). */
-export function etiquetaSeccion(materia: MateriaDetalle): string {
+export function etiquetaSeccion(materia: Pick<MateriaDetalle, "codigo" | "seccion" | "carrera">): string {
   return materia.codigo ? `${materia.codigo} • Sección ${materia.seccion ?? "—"}` : materia.carrera;
 }
 

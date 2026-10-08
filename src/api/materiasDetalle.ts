@@ -16,8 +16,8 @@ function conEpp(materia: MateriaDetalle, catalogo: PracticeInDB[]): MateriaVista
 
 /**
  * El backend no envía el nombre del docente en la materia: se resuelve con
- * GET /usuarios/{id} (una petición por docente distinto). Si falla (p. ej. un
- * alumno, que no tiene permiso), la materia queda sin nombre de docente.
+ * GET /usuarios/{id} (una petición por docente distinto). Si falla (403: el
+ * docente está fuera del cargo de quien pregunta), la materia queda sin nombre.
  */
 async function conDocente(materias: MateriaDetalle[]): Promise<MateriaDetalle[]> {
   const ids = [...new Set(materias.filter((m) => !m.docente_nombre && m.docente_id).map((m) => m.docente_id))];
@@ -33,13 +33,10 @@ async function conDocente(materias: MateriaDetalle[]): Promise<MateriaDetalle[]>
 /**
  * GET /materias con el EPP y el docente de cada materia ya resueltos. El
  * backend filtra por rol: el docente recibe las suyas, el coordinador las de su
- * cargo y el admin todas.
- * PENDIENTE EN BACKEND: el alumno recibe 403 (no hay endpoint de "mis materias").
+ * cargo y el admin todas. El alumno recibe 403: lo suyo es GET /alumno/materias
+ * (src/api/alumno.ts).
  */
-export async function listarMateriasDetalle(params?: {
-  docente_id?: string;
-  alumno_id?: string;
-}): Promise<MateriaVista[]> {
+export async function listarMateriasDetalle(params?: { docente_id?: string }): Promise<MateriaVista[]> {
   const [{ data }, catalogo] = await Promise.all([
     apiClient.get<MateriaDetalle[]>("/materias", { params }),
     catalogoEpp(),

@@ -1,6 +1,5 @@
 import axios from "axios";
 import { apiClient } from "@/api/client";
-import { listarAsistencias } from "@/api/asistencias";
 import type { ConfirmarRequest, PracticaActivaResponse, PracticaInDB } from "@/types";
 import type { PracticaDetalle, PracticaNueva, ReporteDetalle } from "@/types/portal";
 
@@ -9,7 +8,9 @@ import type { PracticaDetalle, PracticaNueva, ReporteDetalle } from "@/types/por
 
 /**
  * POST /practicas: enciende la cámara del servidor y arranca la detección.
- * Solo puede haber una práctica activa en todo el servidor (409 si ya hay otra).
+ * Solo puede haber una práctica activa en todo el servidor: 409 si ya hay otra,
+ * con un mensaje distinto según sea propia o de otro docente. Si la cámara no
+ * abre (500) la práctica no queda creada.
  * `numero` y `tema` son PENDIENTE EN BACKEND (hoy solo usa materia_id).
  */
 export async function iniciarPractica(payload: PracticaNueva): Promise<PracticaDetalle> {
@@ -17,7 +18,11 @@ export async function iniciarPractica(payload: PracticaNueva): Promise<PracticaD
   return data;
 }
 
-/** GET /practicas/active: la práctica en curso del servidor, aunque sea de otro docente. */
+/**
+ * GET /practicas/active: la práctica en curso del docente que pregunta (el
+ * admin ve la que haya). Si la tiene otro docente llega null, y es el 409 de
+ * POST /practicas el que lo avisa.
+ */
 export async function obtenerPracticaActiva(): Promise<PracticaActivaResponse> {
   const { data } = await apiClient.get<PracticaActivaResponse>("/practicas/active");
   return data;
@@ -58,8 +63,21 @@ const practicaDesdeReporte = (r: ReporteDetalle): PracticaDetalle => ({
 });
 
 /**
+ * GET /practicas?materia_id=: prácticas dentro del alcance del usuario (docente:
+ * sus materias; coordinador: su cargo; admin: todas), de la más reciente a la
+ * más antigua. Incluye las que no tienen asistencias.
+ */
+export async function listarPracticas(materiaId?: string): Promise<PracticaDetalle[]> {
+  const { data } = await apiClient.get<PracticaDetalle[]>("/practicas", {
+    params: materiaId ? { materia_id: materiaId } : undefined,
+  });
+  return data;
+}
+
+/**
  * Una práctica por id. El backend no tiene GET /practicas/{id} (PENDIENTE): si
- * es la práctica en curso sale de /practicas/active; si no, se arma con su reporte.
+ * es la práctica en curso sale de /practicas/active; si no, del listado; y como
+ * último recurso se arma con su reporte.
  */
 export async function obtenerPractica(practicaId: string): Promise<PracticaDetalle> {
   const activa = await obtenerPracticaActiva().catch(() => null);
@@ -69,31 +87,25 @@ export async function obtenerPractica(practicaId: string): Promise<PracticaDetal
     return data;
   } catch (error) {
     if (!axios.isAxiosError(error) || ![404, 405].includes(error.response?.status ?? 0)) throw error;
-    return practicaDesdeReporte(await obtenerReporte(practicaId));
   }
+  const listada = (await listarPracticas().catch(() => [])).find((p) => p._id === practicaId);
+  return listada ?? practicaDesdeReporte(await obtenerReporte(practicaId));
 }
 
 /**
- * Prácticas de una materia, de la más reciente a la más antigua.
- * PENDIENTE EN BACKEND: GET /practicas?materia_id=. Mientras tanto se agrupan
- * las asistencias por practica_id y se pide el reporte de cada una, así que las
- * prácticas sin ninguna asistencia no aparecen (FRONTEND.md §11).
+ * Prácticas de una materia con sus contadores de asistencia. El listado del
+ * backend no los trae (PENDIENTE): se completan con el reporte de cada práctica.
  */
 export async function listarPracticasMateria(materiaId: string): Promise<PracticaDetalle[]> {
-  try {
-    const { data } = await apiClient.get<PracticaDetalle[]>("/practicas", {
-      params: { materia_id: materiaId },
-    });
-    return data;
-  } catch (error) {
-    if (!axios.isAxiosError(error) || ![404, 405].includes(error.response?.status ?? 0)) throw error;
-  }
-
-  const asistencias = await listarAsistencias({ materia_id: materiaId });
-  const ids = [...new Set(asistencias.map((a) => a.practica_id))];
-  // allSettled: si falla el reporte de una práctica, el resto igual se muestra.
-  const reportes = await Promise.allSettled(ids.map(obtenerReporte));
-  return reportes
-    .flatMap((r) => (r.status === "fulfilled" ? [{ ...practicaDesdeReporte(r.value), materia_id: materiaId }] : []))
-    .sort((a, b) => b.hora_inicio.localeCompare(a.hora_inicio));
+  const practicas = await listarPracticas(materiaId);
+  // allSettled: si falla el reporte de una práctica, sale sin contadores.
+  const reportes = await Promise.allSettled(
+    practicas.map((p) => (p.presentes === undefined ? obtenerReporte(p._id) : Promise.resolve(null))),
+  );
+  return practicas.map((p, i) => {
+    const r = reportes[i];
+    if (r.status !== "fulfilled" || !r.value) return p;
+    const { presentes, ausentes, total_matriculados } = r.value;
+    return { ...p, presentes, ausentes, total_matriculados };
+  });
 }

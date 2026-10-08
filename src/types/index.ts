@@ -15,7 +15,7 @@ export interface HealthResponse {
   mongo: string;
 }
 
-// --- Auth (POST /auth/login) ---
+// --- Auth (POST /auth/login, GET /auth/me, POST /auth/refresh) ---
 
 export interface UsuarioLogin {
   codigo: string;
@@ -37,7 +37,8 @@ export interface JwtPayload {
   exp: number;
 }
 
-// --- Usuarios (POST /usuarios/coordinadores | docentes | alumnos, GET /usuarios/{id}) ---
+// --- Usuarios (POST /usuarios/coordinadores | docentes | alumnos, GET /usuarios?rol=,
+//     GET /usuarios/{id}, GET /auth/me) ---
 
 export interface UsuarioOut {
   _id: string;
@@ -106,6 +107,17 @@ export interface MateriaUpdate {
   aula?: string;
 }
 
+// GET /alumno/materias: lo que ve un alumno de las materias donde está matriculado
+export interface MateriaAlumno {
+  _id: string;
+  nombre: string;
+  area: Area;
+  carrera: string;
+  facultad: string;
+  aula: string;
+  docente_nombre: string | null;
+}
+
 export interface AlumnoEnrollRequest {
   codigo: string;
 }
@@ -125,7 +137,7 @@ export interface PracticeInDB {
   created_at?: ISODateTime;
 }
 
-// --- Prácticas (POST /practicas, GET /practicas/active,
+// --- Prácticas (POST /practicas, GET /practicas?materia_id=, GET /practicas/active,
 //     POST /practicas/{id}/confirmar, POST /practicas/{id}/end) ---
 
 export interface PracticaCreate {
@@ -142,7 +154,8 @@ export interface PracticaInDB {
   estado: EstadoPractica; // default "activa"
 }
 
-// GET /practicas/active devuelve null si no hay práctica activa
+// GET /practicas/active devuelve la práctica en curso del docente que pregunta
+// (el admin ve la que haya), o null
 export type PracticaActivaResponse = PracticaInDB | null;
 
 export interface ConfirmarRequest {
@@ -159,6 +172,14 @@ export interface AsistenciaInDB {
   cumplio_indumentaria: boolean;
   faltantes: string[]; // default []
   evidencia_url?: string | null;
+}
+
+// GET /alumno/asistencias: la asistencia con el contexto de la materia (null si
+// la práctica o la materia ya no existen)
+export interface AsistenciaAlumno extends AsistenciaInDB {
+  materia_id: string | null;
+  materia_nombre: string | null;
+  docente_nombre: string | null;
 }
 
 // Query params de GET /asistencias
@@ -197,6 +218,17 @@ export interface ReportePractica {
   detalle: FilaAsistencia[];
 }
 
+// --- Coordinación (GET /coordinacion/resumen) ---
+
+export interface ResumenCoordinacion {
+  materias: number; // materias a su cargo
+  materias_nuevas: number; // de esas, las creadas en los últimos 7 días
+  materias_lab_activo: number; // de esas, las que tuvieron práctica en los últimos 7 días
+  docentes: number; // docentes a su cargo
+  docentes_activos_hoy: number; // docentes que iniciaron una práctica hoy en sus materias
+  alumnos: number; // alumnos distintos matriculados en sus materias
+}
+
 // --- Eventos en vivo (WebSocket /ws/detections; ver FRONTEND.md §7) ---
 
 export interface DeteccionItem {
@@ -209,7 +241,25 @@ export interface DeteccionItem {
 
 export type FasePractica = "identificacion" | "indumentaria";
 
+export interface AlumnoIdentificado {
+  alumno_id: string;
+  nombre: string;
+  codigo: string;
+  confianza: number; // similitud facial, de 0.60 a 1
+}
+
 export type WsEvent =
+  | {
+      // Primer mensaje de cada conexión: solo lo recibe quien se conecta. Trae la
+      // práctica que haya en el servidor, sea de quien sea.
+      evento: "estado_inicial";
+      practica_id: string | null; // null = no hay práctica en curso (el resto llega en null)
+      fase: FasePractica | null;
+      identificado: AlumnoIdentificado | null; // último identificado (en "indumentaria", el que se revisa)
+      alumno_id: string | null; // alumno en revisión; solo en fase "indumentaria"
+      segundos_restantes: number | null; // lo que queda de los 6 s; solo en fase "indumentaria"
+      timestamp: string;
+    }
   | {
       evento: "estudiante_identificado";
       practica_id: string;

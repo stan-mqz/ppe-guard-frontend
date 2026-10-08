@@ -16,7 +16,7 @@ export async function crearAlumno(payload: AlumnoCreate): Promise<UsuarioOut> {
   return data;
 }
 
-/** GET /usuarios/{id} (coordinador, docente). */
+/** GET /usuarios/{id} (coordinador, docente): 403 si el usuario está fuera de su cargo. */
 export async function obtenerUsuario(usuarioId: string): Promise<UsuarioOut> {
   const { data } = await apiClient.get<UsuarioOut>(`/usuarios/${usuarioId}`);
   return data;

@@ -285,6 +285,13 @@ function reporte(practica: PracticaDetalle): ReporteDetalle {
 
 // --- Rutas: sesión y catálogos ----------------------------------------------
 
+const tokenResponse = (usuario: DbUsuario) => ({
+  access_token: crearToken(usuario),
+  token_type: "bearer",
+  rol: usuario.rol,
+  nombre: usuario.nombre,
+});
+
 on("POST", "/auth/login", ({ body }) => {
   const codigo = texto(body.codigo).toLowerCase();
   const usuario = db.usuarios.find((u) => u.codigo.toLowerCase() === codigo);
@@ -292,13 +299,13 @@ on("POST", "/auth/login", ({ body }) => {
     throw new HttpError(401, "Código o contraseña incorrectos");
   }
   if (usuario.activo === false) throw new HttpError(403, "Este usuario se encuentra desactivado");
-  return {
-    access_token: crearToken(usuario),
-    token_type: "bearer",
-    rol: usuario.rol,
-    nombre: usuario.nombre,
-  };
+  return tokenResponse(usuario);
 });
+
+// Los campos extra de UsuarioDetalle (correo, estatus, rostro_registrado...) son PENDIENTE.
+on("GET", "/auth/me", (ctx) => usuarioOut(autorizar(ctx)));
+
+on("POST", "/auth/refresh", (ctx) => tokenResponse(autorizar(ctx)));
 
 // PENDIENTE
 on("POST", "/auth/cambiar-password", (ctx) => {
@@ -318,7 +325,6 @@ on("GET", "/practices", () => CATALOGO_EPP);
 // PENDIENTE
 on("GET", "/catalogos/facultades", () => FACULTADES);
 
-// PENDIENTE
 on("GET", "/coordinacion/resumen", (ctx) => {
   autorizar(ctx, "coordinador");
   const docentes = db.usuarios.filter((u) => u.rol === "docente");
@@ -335,14 +341,57 @@ on("GET", "/coordinacion/resumen", (ctx) => {
 // --- Rutas: materias ----------------------------------------------------------
 
 on("GET", "/materias", (ctx) => {
-  const usuario = autorizar(ctx);
-  // PENDIENTE: el backend aún no deja al alumno listar sus materias.
-  const alumnoId = usuario.rol === "alumno" ? usuario._id : ctx.query.alumno_id;
+  const usuario = autorizar(ctx, "docente", "coordinador");
   const docenteId = usuario.rol === "docente" ? usuario._id : ctx.query.docente_id;
+  return db.materias.filter((m) => !docenteId || m.docente_id === docenteId).map(materiaOut);
+});
+
+// --- Rutas: alumno (exclusivas del rol; el admin también recibe 403) -----------
+
+function soloAlumno(ctx: Ctx): DbUsuario {
+  const usuario = autorizar(ctx);
+  if (usuario.rol !== "alumno") throw new HttpError(403, "No tienes permiso para esta acción");
+  return usuario;
+}
+
+const nombreDocente = (materia?: MateriaDetalle) =>
+  db.usuarios.find((u) => u._id === materia?.docente_id)?.nombre ?? null;
+
+// codigo, seccion y epp son PENDIENTE: el backend real solo envía los datos base.
+on("GET", "/alumno/materias", (ctx) => {
+  const alumno = soloAlumno(ctx);
   return db.materias
-    .filter((m) => !docenteId || m.docente_id === docenteId)
-    .filter((m) => !alumnoId || m.alumnos_ids.includes(alumnoId))
-    .map(materiaOut);
+    .filter((m) => m.alumnos_ids.includes(alumno._id))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+    .map(({ _id, nombre, area, carrera, facultad, aula, codigo, seccion, epp, ...m }) => ({
+      _id,
+      nombre,
+      area,
+      carrera,
+      facultad,
+      aula,
+      codigo,
+      seccion,
+      epp,
+      docente_nombre: nombreDocente(m as MateriaDetalle),
+    }));
+});
+
+on("GET", "/alumno/asistencias", (ctx) => {
+  const alumno = soloAlumno(ctx);
+  return db.asistencias
+    .filter((a) => a.alumno_id === alumno._id)
+    .sort((a, b) => msFechaApi(b.hora_identificacion) - msFechaApi(a.hora_identificacion))
+    .map((a) => {
+      const materia = db.materias.find((m) => m._id === a.materia_id);
+      return {
+        ...a,
+        evidencia_url: a.evidencia_url ?? null,
+        materia_id: materia?._id ?? null,
+        materia_nombre: materia?.nombre ?? null,
+        docente_nombre: nombreDocente(materia),
+      };
+    });
 });
 
 function datosMateria(body: Ctx["body"], base?: MateriaDetalle): Omit<MateriaDetalle, "_id" | "coordinador_id" | "alumnos_ids"> {
@@ -384,7 +433,7 @@ on("POST", "/materias", (ctx) => {
 });
 
 on("GET", "/materias/:id", (ctx) => {
-  const usuario = autorizar(ctx);
+  const usuario = autorizar(ctx, "docente", "coordinador");
   const materia = buscarMateria(ctx.params.id);
   if (usuario.rol === "docente" && materia.docente_id !== usuario._id) {
     throw new HttpError(403, "No puedes ver una materia que no impartes");
@@ -457,9 +506,6 @@ on("DELETE", "/materias/:id/alumnos/:alumnoId", (ctx) => {
 // --- Rutas: usuarios ----------------------------------------------------------
 
 // PENDIENTE
-on("GET", "/usuarios/me", (ctx) => usuarioOut(autorizar(ctx)));
-
-// PENDIENTE
 on("GET", "/usuarios/padron/:codigo", (ctx) => {
   autorizar(ctx, "docente", "coordinador");
   const codigo = ctx.params.codigo.toLowerCase();
@@ -468,15 +514,27 @@ on("GET", "/usuarios/padron/:codigo", (ctx) => {
   return usuarioOut(alumno);
 });
 
-// PENDIENTE
+/**
+ * Misma visibilidad que el backend: el docente ve a los alumnos de sus
+ * materias; el coordinador, a los docentes y alumnos (en la demo hay una sola
+ * coordinación, así que son todos); el admin, a todos.
+ */
+function visiblePara(usuario: DbUsuario): (u: DbUsuario) => boolean {
+  if (usuario.rol === "admin") return () => true;
+  if (usuario.rol === "coordinador") return (u) => u.rol === "docente" || u.rol === "alumno";
+  const alumnos = new Set(db.materias.filter((m) => m.docente_id === usuario._id).flatMap((m) => m.alumnos_ids));
+  return (u) => alumnos.has(u._id);
+}
+
 on("GET", "/usuarios", (ctx) => {
-  const usuario = autorizar(ctx, "coordinador");
+  const usuario = autorizar(ctx, "coordinador", "docente");
   const rol = ctx.query.rol;
-  if (rol === "coordinador" && usuario.rol !== "admin") {
-    throw new HttpError(403, "Solo el administrador puede ver a los coordinadores");
-  }
+  const visible = visiblePara(usuario);
   const asistencias = asistenciasPorAlumno();
-  return db.usuarios.filter((u) => !rol || u.rol === rol).map((u) => usuarioOut(u, asistencias));
+  return db.usuarios
+    .filter((u) => visible(u) && (!rol || u.rol === rol))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+    .map((u) => usuarioOut(u, asistencias));
 });
 
 // PENDIENTE
@@ -570,8 +628,12 @@ on("POST", "/usuarios/alumnos", (ctx) => {
 });
 
 on("GET", "/usuarios/:id", (ctx) => {
-  autorizar(ctx, "coordinador", "docente");
-  return usuarioOut(buscarUsuario(ctx.params.id));
+  const usuario = autorizar(ctx, "coordinador", "docente");
+  const buscado = buscarUsuario(ctx.params.id);
+  if (buscado._id !== usuario._id && !visiblePara(usuario)(buscado)) {
+    throw new HttpError(403, "No puedes ver un usuario fuera de tu cargo");
+  }
+  return usuarioOut(buscado);
 });
 
 // PENDIENTE
@@ -603,8 +665,14 @@ on("PATCH", "/usuarios/:id/estado", (ctx) => {
 
 on("POST", "/practicas", (ctx) => {
   const usuario = autorizar(ctx, "docente");
-  if (db.practicas.some((p) => p.estado === "activa")) {
-    throw new HttpError(409, "Ya hay una práctica en curso; finalízala antes de iniciar otra");
+  const enCurso = db.practicas.find((p) => p.estado === "activa");
+  if (enCurso) {
+    throw new HttpError(
+      409,
+      enCurso.docente_id !== usuario._id
+        ? "Hay una práctica en curso de otro docente; espera a que la finalice"
+        : "Ya hay una práctica en curso; finalízala antes de iniciar otra",
+    );
   }
   const materia = buscarMateria(texto(ctx.body.materia_id));
   if (usuario.rol === "docente" && materia.docente_id !== usuario._id) {
@@ -627,12 +695,16 @@ on("POST", "/practicas", (ctx) => {
   return practica;
 });
 
+// Cada docente ve solo su práctica en curso; el admin, la que haya.
 on("GET", "/practicas/active", (ctx) => {
-  autorizar(ctx, "docente");
-  return db.practicas.find((p) => p.estado === "activa") ?? null;
+  const usuario = autorizar(ctx, "docente");
+  return (
+    db.practicas.find((p) => p.estado === "activa" && (usuario.rol !== "docente" || p.docente_id === usuario._id)) ??
+    null
+  );
 });
 
-// PENDIENTE
+// presentes, ausentes y total_matriculados en la respuesta son PENDIENTE.
 on("GET", "/practicas", (ctx) => {
   const usuario = autorizar(ctx, "docente", "coordinador");
   const { materia_id } = ctx.query;
@@ -658,8 +730,11 @@ on("POST", "/practicas/:id/confirmar", (ctx) => {
 });
 
 on("POST", "/practicas/:id/end", (ctx) => {
-  autorizar(ctx, "docente");
+  const usuario = autorizar(ctx, "docente");
   const practica = buscarPractica(ctx.params.id);
+  if (usuario.rol === "docente" && practica.docente_id !== usuario._id) {
+    throw new HttpError(403, "No puedes finalizar una práctica que no impartes");
+  }
   if (practica.estado === "finalizada") throw new HttpError(409, "Esta práctica ya fue finalizada");
   db.asistencias.push(...asistenciasSimuladas(practica));
   practica.estado = "finalizada";

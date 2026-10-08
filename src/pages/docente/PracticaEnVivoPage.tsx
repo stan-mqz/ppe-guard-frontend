@@ -13,7 +13,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getApiErrorMessage } from "@/api/client";
-import { STREAM_URL, USE_MOCKS, urlEvidencia } from "@/api/config";
+import { USE_MOCKS, urlEvidencia, urlStream } from "@/api/config";
 import { obtenerHealth } from "@/api/health";
 import { obtenerMateria } from "@/api/materiasDetalle";
 import {
@@ -31,7 +31,7 @@ import { StatusPill } from "@/components/StatusPill";
 import { Topbar } from "@/components/Topbar";
 import { useAsync } from "@/hooks/useAsync";
 import { useCamera } from "@/hooks/useCamera";
-import type { DeteccionItem, FasePractica, WsEvent } from "@/types";
+import type { AlumnoIdentificado, DeteccionItem, FasePractica, WsEvent } from "@/types";
 import type { ReporteDetalle } from "@/types/portal";
 import { formatHora, msFechaApi } from "@/utils/format";
 import { etiquetaSeccion, listaEpp } from "@/utils/materia";
@@ -46,12 +46,7 @@ const INTERVALO_REPORTE_MS = USE_MOCKS ? 2500 : 15000;
 /** La revisión de indumentaria dura 6 segundos fijos en el backend. */
 const REVISION_MS = 6000;
 
-interface Identificado {
-  alumno_id: string;
-  nombre: string;
-  codigo: string;
-  confianza: number;
-}
+type Identificado = AlumnoIdentificado;
 
 interface Resultado {
   nombre: string;
@@ -345,10 +340,20 @@ export const PracticaEnVivoPage = () => {
 
   const onEvento = (e: WsEvent) => {
     if (e.evento === "detecciones_frame") return pintar.current?.(e.items);
-    // El socket es un broadcast global: se ignora lo que no sea de esta práctica.
+    // El socket es un broadcast global (y estado_inicial trae la práctica que
+    // haya en el servidor, sea de quien sea): se ignora lo que no sea de esta.
     if (e.practica_id !== practicaId) return;
 
-    if (e.evento === "estudiante_identificado") {
+    if (e.evento === "estado_inicial") {
+      // Foto de la práctica al conectar: reconstruye la pantalla tras recargar
+      // o reconectar. En "indumentaria", `identificado` es el alumno en revisión.
+      const enRevision = e.fase === "indumentaria";
+      setAviso(null);
+      setFase(e.fase ?? "identificacion");
+      setIdentificado(e.identificado);
+      setRevisionHasta(enRevision ? Date.now() + (e.segundos_restantes ?? 0) * 1000 : null);
+      if (!enRevision) pintar.current?.([]);
+    } else if (e.evento === "estudiante_identificado") {
       setAviso(null);
       setIdentificado({ alumno_id: e.alumno_id, nombre: e.nombre, codigo: e.codigo, confianza: e.confianza });
     } else if (e.evento === "fase_cambiada") {
@@ -373,7 +378,11 @@ export const PracticaEnVivoPage = () => {
       void cargarReporte();
     }
   };
-  useDetectionsSocket(onEvento, !USE_MOCKS && vista === "en_vivo" && Boolean(practica));
+  // Si el servidor rechaza el socket se muestra el corte de conexión:
+  // "Reintentar" vuelve a "en_vivo" y con eso reconecta.
+  useDetectionsSocket(onEvento, !USE_MOCKS && vista === "en_vivo" && practicaActiva, () =>
+    setVista("interrumpida"),
+  );
 
   const confirmar = async () => {
     if (!identificado) return;
@@ -520,11 +529,12 @@ export const PracticaEnVivoPage = () => {
               ) : (
                 // El contenedor mide exactamente lo mismo que la imagen (sin
                 // object-cover) para que las cajas normalizadas calcen. El MJPEG
-                // solo envía imagen mientras la práctica está activa.
+                // pide el token por query y solo envía imagen mientras la
+                // práctica está activa.
                 <div className="relative h-full">
                   <img
                     key={streamKey}
-                    src={`${STREAM_URL}?t=${streamKey}`}
+                    src={`${urlStream()}&t=${streamKey}`}
                     alt="Cámara IA del laboratorio"
                     onError={() => setVista("interrumpida")}
                     className="block h-full w-auto max-w-full"
